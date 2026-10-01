@@ -4,7 +4,8 @@ import os
 import sys
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Optional, Tuple
+from typing import Any, Iterable, Optional, Tuple
+from urllib.parse import urlsplit, urlunsplit
 
 import adbc_driver_manager
 import adbc_driver_manager.dbapi as dbapi
@@ -45,10 +46,16 @@ class RedisAdbcCredentials(Credentials):
 
     @property
     def unique_field(self) -> str:
-        return self.uri
+        # Hashed for dbt's anonymous usage stats: the server, not credentials.
+        return _redact_uri(self.uri, keep_user=False)
 
     def _connection_keys(self) -> Tuple[str, ...]:
         return ("driver", "uri", "database", "schema", "username", "aggregate_pushdown", "rename_rekey")
+
+    def connection_info(self, *, with_aliases: bool = False) -> Iterable[Tuple[str, Any]]:
+        # dbt debug prints these and logs them: never the URI's password.
+        for key, value in super().connection_info(with_aliases=with_aliases):
+            yield key, _redact_uri(value) if key == "uri" and value else value
 
     def driver_path(self) -> str:
         path = self.driver or os.environ.get("REDIS_ADBC_DRIVER")
@@ -61,6 +68,22 @@ class RedisAdbcCredentials(Credentials):
         if not os.path.splitext(os.path.basename(path))[1]:
             path += {"darwin": ".dylib", "win32": ".dll"}.get(sys.platform, ".so")
         return path
+
+
+def _redact_uri(uri: str, keep_user: bool = True) -> str:
+    """The URI with its password replaced by ****, or (keep_user=False)
+    without any credentials."""
+    try:
+        parts = urlsplit(uri)
+        host = parts.hostname or ""
+        if parts.port:
+            host = f"{host}:{parts.port}"
+    except ValueError:
+        return "<unparseable uri>"
+    if keep_user and (parts.username or parts.password):
+        user = parts.username or ""
+        host = f"{user}:****@{host}" if parts.password else f"{user}@{host}"
+    return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
 
 
 class RedisAdbcHandle:

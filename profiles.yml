@@ -7,6 +7,10 @@ nyc_taxi:
       # platform's (.dylib on macOS, .so on Linux, .dll on Windows).
       driver: "{{ env_var('REDIS_ADBC_DRIVER', 'driver/libadbc_driver_redis') }}"
       uri: "{{ env_var('REDIS_URI', 'redis://localhost:6380/0') }}"
+      # Credentials here rather than in REDIS_URI, so they never show up in
+      # dbt debug or the logs. Empty means none.
+      username: "{{ env_var('REDIS_USERNAME', '') }}"
+      password: "{{ env_var('REDIS_PASSWORD', '') }}"
       database: redis
       schema: taxi
       threads: 4
