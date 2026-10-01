@@ -1,6 +1,7 @@
 """Connection management: dbt <-> Redis ADBC driver via adbc_driver_manager's DB-API."""
 
 import os
+import sys
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Optional, Tuple
@@ -55,7 +56,11 @@ class RedisAdbcCredentials(Credentials):
             raise DbtRuntimeError(
                 "No Redis ADBC driver configured: set `driver` in profiles.yml or $REDIS_ADBC_DRIVER"
             )
-        return os.path.expanduser(path)
+        path = os.path.expanduser(path)
+        # `driver/libadbc_driver_redis` means the platform's shared library.
+        if not os.path.splitext(os.path.basename(path))[1]:
+            path += {"darwin": ".dylib", "win32": ".dll"}.get(sys.platform, ".so")
+        return path
 
 
 class RedisAdbcHandle:

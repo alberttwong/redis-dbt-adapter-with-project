@@ -1,7 +1,7 @@
 export DBT_PROFILES_DIR := $(CURDIR)
 DBT := uv run dbt
 
-.PHONY: setup redis-up redis-down driver data deps debug seed load run test build snapshot incremental-demo snapshot-demo microbatch-demo docs docs-serve clean all
+.PHONY: setup redis-up redis-down driver driver-build data deps debug seed load run test build snapshot incremental-demo snapshot-demo microbatch-demo docs docs-serve clean all
 
 ## One-time setup: Python env, driver, data, Redis
 setup: deps driver data redis-up
@@ -9,7 +9,12 @@ setup: deps driver data redis-up
 deps:
 	uv sync
 
+# The prebuilt driver from the pinned release (scripts/driver-version), or a
+# build from source where there's none. driver-build always builds.
 driver:
+	./scripts/download_driver.sh
+
+driver-build:
 	./scripts/build_driver.sh
 
 data:

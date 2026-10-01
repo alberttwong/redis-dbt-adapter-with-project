@@ -3,8 +3,9 @@ nyc_taxi:
   outputs:
     dev:
       type: redis_adbc
-      # Built by scripts/build_driver.sh (libadbc_driver_redis.so on Linux).
-      driver: "{{ env_var('REDIS_ADBC_DRIVER', 'driver/libadbc_driver_redis.dylib') }}"
+      # Put there by `make driver`. Without an extension, the adapter adds the
+      # platform's (.dylib on macOS, .so on Linux, .dll on Windows).
+      driver: "{{ env_var('REDIS_ADBC_DRIVER', 'driver/libadbc_driver_redis') }}"
       uri: "{{ env_var('REDIS_URI', 'redis://localhost:6380/0') }}"
       database: redis
       schema: taxi
