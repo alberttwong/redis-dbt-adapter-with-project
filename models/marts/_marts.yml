@@ -3,8 +3,9 @@ version: 2
 models:
   - name: fct_trips
     description: >
-      One row per trip. Incremental: each run inserts trips picked up after the
-      latest pickup already in the table (delete+insert on trip_id).
+      One row per trip. Incremental with the merge strategy on trip_id: each
+      run merges the trips picked up from `lookback_hours` before the latest
+      one already in the table.
     columns:
       - name: trip_id
         data_tests: [unique, not_null]
@@ -26,7 +27,10 @@ models:
         data_tests: [unique, not_null]
 
   - name: agg_daily_revenue
-    description: Trips, passengers, miles and revenue per pickup date.
+    description: >
+      Trips, passengers, miles and revenue per pickup date, with window
+      functions over the days: a 7-day rolling revenue average, the change in
+      trips from the previous day, and the day's revenue rank.
     columns:
       - name: pickup_date
         data_tests: [unique, not_null]
@@ -34,6 +38,23 @@ models:
         data_tests:
           - in_range:
               arguments: {min_value: 1, max_value: 1000000}
+      - name: revenue_7d_avg
+        description: Average total_revenue over this day and the 6 before it.
+        data_tests: [not_null]
+      - name: trips_vs_prev_day
+        description: trips minus the previous day's trips (NULL on the first day).
+      - name: revenue_rank
+        data_tests:
+          - in_range:
+              arguments: {min_value: 1, max_value: 31}
+
+  - name: agg_top_pickup_zones
+    description: The busiest pickup zones of each borough (RANK() per borough, filtered with QUALIFY).
+    columns:
+      - name: borough_rank
+        data_tests:
+          - in_range:
+              arguments: {min_value: 1, max_value: "{{ var('top_zones_per_borough') }}"}
 
   - name: agg_hourly_demand
     description: Demand by hour of day (built from CAST(ts AS TIME) since the driver has no EXTRACT).
@@ -45,7 +66,7 @@ models:
     description: Trips between boroughs with at least 25 trips (GROUP BY ... HAVING).
 
   - name: agg_payment_mix
-    description: Share of trips and tips by payment type (scalar subquery for the total).
+    description: Share of trips and tips by payment type (SUM(COUNT(*)) OVER () for the total).
     columns:
       - name: payment_type_id
         data_tests: [unique]

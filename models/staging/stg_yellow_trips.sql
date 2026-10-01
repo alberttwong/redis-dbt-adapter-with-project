@@ -16,7 +16,7 @@ select
     extract(hour from tpep_pickup_datetime)     as pickup_hour,
     extract(isodow from tpep_pickup_datetime)   as pickup_iso_weekday,
     {{ day_part('tpep_pickup_datetime') }}      as pickup_day_part,
-    {{ round_to('extract(epoch from tpep_dropoff_datetime - tpep_pickup_datetime) / 60.0', 2) }} as trip_duration_minutes,
+    round(extract(epoch from tpep_dropoff_datetime - tpep_pickup_datetime) / 60.0, 2) as trip_duration_minutes,
 
     passenger_count,
     trip_distance,

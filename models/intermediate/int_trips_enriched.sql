@@ -49,11 +49,11 @@ select
     -- Tips are only recorded for card payments.
     case
         when t.payment_type_id = 1 and t.fare_amount > 0
-        then {{ round_to('t.tip_amount * 100.0 / t.fare_amount', 2) }}
+        then round(t.tip_amount * 100.0 / t.fare_amount, 2)
     end                                         as tip_pct,
     case
         when t.trip_duration_minutes > 0
-        then {{ round_to('t.trip_distance * 60.0 / t.trip_duration_minutes', 2) }}
+        then round(t.trip_distance * 60.0 / t.trip_duration_minutes, 2)
     end                                         as avg_mph
 
 from trips t

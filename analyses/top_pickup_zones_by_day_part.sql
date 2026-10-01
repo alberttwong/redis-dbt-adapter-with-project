@@ -5,7 +5,7 @@ select
     pickup_borough,
     pickup_zone,
     count(*)                                as trips,
-    {{ round_to('avg(total_amount)', 2) }}  as avg_total
+    round(avg(total_amount), 2)                 as avg_total
 from {{ ref('fct_trips') }}
 group by pickup_day_part, pickup_borough, pickup_zone
 having count(*) >= 500

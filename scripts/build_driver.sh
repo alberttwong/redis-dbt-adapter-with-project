@@ -4,7 +4,7 @@
 set -euo pipefail
 
 DRIVER_REPO="${DRIVER_REPO:-https://github.com/alberttwong/redis-adbc-driver.git}"
-DRIVER_VERSION="${DRIVER_VERSION:-54b83af}"  # main after #11, #12, #14, #15
+DRIVER_VERSION="${DRIVER_VERSION:-b905827}"  # main after #42
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="${ROOT}/build/redis-adbc-driver"
 

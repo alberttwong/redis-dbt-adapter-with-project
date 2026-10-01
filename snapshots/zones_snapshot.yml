@@ -1,0 +1,14 @@
+snapshots:
+  - name: zones_snapshot
+    description: >
+      History of the TLC taxi zone lookup (SCD type 2): a new version of a
+      zone whenever its borough, name or service zone changes.
+    relation: ref('taxi_zone_lookup')
+    config:
+      schema: snapshots
+      unique_key: LocationID
+      strategy: check
+      check_cols: [Borough, Zone, service_zone]
+    columns:
+      - name: dbt_scd_id
+        data_tests: [unique, not_null]

@@ -1,7 +1,7 @@
 export DBT_PROFILES_DIR := $(CURDIR)
 DBT := uv run dbt
 
-.PHONY: setup redis-up redis-down driver data deps debug seed load run test build incremental-demo docs docs-serve clean all
+.PHONY: setup redis-up redis-down driver data deps debug seed load run test build snapshot incremental-demo snapshot-demo docs docs-serve clean all
 
 ## One-time setup: Python env, driver, data, Redis
 setup: deps driver data redis-up
@@ -42,6 +42,9 @@ test:
 build:
 	$(DBT) build
 
+snapshot:
+	$(DBT) snapshot
+
 # fct_trips with the first half of January, then an incremental run that
 # reloads the last day and appends the rest.
 incremental-demo:
@@ -49,6 +52,16 @@ incremental-demo:
 	$(DBT) show --inline "select count(*) as trips, max(pickup_datetime) as last_pickup from {{ ref('fct_trips') }}" --vars '{trips_end: "2019-01-16 00:00:00"}'
 	$(DBT) run -s +fct_trips
 	$(DBT) show --inline "select count(*) as trips, max(pickup_datetime) as last_pickup from {{ ref('fct_trips') }}"
+
+# Snapshot the zone lookup, rename JFK, snapshot again: the history keeps
+# both versions. `dbt seed` then restores the lookup (a third snapshot would
+# record that too).
+snapshot-demo:
+	$(DBT) snapshot
+	$(DBT) run-operation rename_zone --args '{location_id: 132, name: "JFK International Airport"}'
+	$(DBT) snapshot
+	$(DBT) show --inline "select LocationID, Zone, dbt_valid_from, dbt_valid_to from {{ ref('zones_snapshot') }} where LocationID = 132 order by dbt_valid_from"
+	$(DBT) seed
 
 docs:
 	$(DBT) docs generate

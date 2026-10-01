@@ -1,9 +1,9 @@
 """dbt adapter for Redis via the Redis ADBC driver.
 
-The driver speaks enough SQL for dbt's generated statements (CTAS, CTEs,
-subqueries, joins, set operations, views, ALTER TABLE ... RENAME). Metadata
-comes from ADBC GetObjects; the include/ macros cover the remaining gaps (no
-transactions, TRUNCATE, temporary tables, or view renames).
+The driver speaks the SQL dbt's default macros and materializations generate
+(CTAS, views, ALTER ... RENAME, DROP ... CASCADE, TRUNCATE, temporary tables,
+MERGE, window functions), so this adapter mostly provides the connection,
+metadata through ADBC GetObjects, and fast bulk loading through ADBC ingest.
 """
 
 import datetime
@@ -91,8 +91,7 @@ class RedisAdbcRelation(BaseRelation):
     # Render `schema.table`: the driver has a single catalog ("redis").
     include_policy: Policy = field(default_factory=lambda: Policy(database=False, schema=True, identifier=True))
     quote_policy: Policy = field(default_factory=lambda: Policy(database=False, schema=False, identifier=False))
-    # ALTER TABLE ... RENAME works on tables only; views use CREATE OR REPLACE.
-    renameable_relations: FrozenSet = frozenset({RelationType.Table})
+    renameable_relations: FrozenSet = frozenset({RelationType.Table, RelationType.View})
     replaceable_relations: FrozenSet = frozenset({RelationType.View})
 
 
@@ -204,16 +203,16 @@ class RedisAdbcAdapter(SQLAdapter):
         return []
 
     def get_columns_in_relation(self, relation: BaseRelation) -> List[Column]:
+        # A temporary relation is rendered without a schema (see
+        # make_temp_relation); GetObjects lists it under pg_temp.
+        schema = relation.schema if relation.include_policy.schema else "pg_temp"
         return [
             self.Column(column=c["column_name"], dtype=c["xdbc_type_name"])
-            for c in self._table_columns(relation.schema, relation.identifier)
+            for c in self._table_columns(schema, relation.identifier)
         ]
 
-    def drop_schema(self, relation: BaseRelation) -> None:
-        # DROP SCHEMA fails unless the schema is empty.
-        for rel in self.list_relations_without_caching(relation):
-            self.drop_relation(rel)
-        super().drop_schema(relation)
+    def valid_incremental_strategies(self):
+        return ["append", "delete+insert", "merge"]
 
     def _get_one_catalog(
         self,
