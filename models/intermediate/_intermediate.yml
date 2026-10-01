@@ -3,6 +3,9 @@ version: 2
 models:
   - name: int_trips_enriched
     description: Trips joined to pickup/dropoff zones, payment types, rate codes and vendors.
+    config:
+      # Lets microbatch models (fct_trips_microbatch) read one batch's window.
+      event_time: pickup_datetime
     columns:
       - name: trip_id
         data_tests: [unique, not_null]

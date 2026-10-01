@@ -19,3 +19,31 @@
   {%- set n = adapter.load_seed_table(relation, agate_table) -%}
   {{ return("-- " ~ n ~ " rows loaded with ADBC bulk ingest") }}
 {% endmacro %}
+
+{#- Microbatch: each batch replaces the target's rows in its event_time
+    window [event_time_start, event_time_end), then inserts the batch. The
+    bounds are written like dbt's own filter on upstream refs, so the window
+    deleted is exactly the one the batch was read from. -#}
+{% macro redis_adbc__get_incremental_microbatch_sql(arg_dict) %}
+  {%- set target = arg_dict["target_relation"] -%}
+  {%- set source = arg_dict["temp_relation"] -%}
+  {%- set dest_columns = arg_dict["dest_columns"] -%}
+  {%- set predicates = (arg_dict.get("incremental_predicates") or []) | list -%}
+  {%- set event_time = model.config.event_time -%}
+  {%- if model.batch and model.batch.event_time_start -%}
+    {%- do predicates.append("DBT_INTERNAL_TARGET." ~ event_time ~ " >= '" ~ model.batch.event_time_start ~ "'") -%}
+  {%- endif -%}
+  {%- if model.batch and model.batch.event_time_end -%}
+    {%- do predicates.append("DBT_INTERNAL_TARGET." ~ event_time ~ " < '" ~ model.batch.event_time_end ~ "'") -%}
+  {%- endif -%}
+  {%- if not predicates -%}
+    {{ exceptions.raise_compiler_error("microbatch: no batch window for " ~ target ~ "; refusing to delete every row") }}
+  {%- endif -%}
+  {%- set cols = get_quoted_csv(dest_columns | map(attribute="name")) %}
+  delete from {{ target }} as DBT_INTERNAL_TARGET
+  where {{ predicates | join("\n    and ") }};
+  insert into {{ target }} ({{ cols }})
+  (
+    select {{ cols }} from {{ source }}
+  )
+{% endmacro %}

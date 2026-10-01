@@ -1,7 +1,7 @@
 export DBT_PROFILES_DIR := $(CURDIR)
 DBT := uv run dbt
 
-.PHONY: setup redis-up redis-down driver data deps debug seed load run test build snapshot incremental-demo snapshot-demo docs docs-serve clean all
+.PHONY: setup redis-up redis-down driver data deps debug seed load run test build snapshot incremental-demo snapshot-demo microbatch-demo docs docs-serve clean all
 
 ## One-time setup: Python env, driver, data, Redis
 setup: deps driver data redis-up
@@ -62,6 +62,13 @@ snapshot-demo:
 	$(DBT) snapshot
 	$(DBT) show --inline "select LocationID, Zone, dbt_valid_from, dbt_valid_to from {{ ref('zones_snapshot') }} where LocationID = 132 order by dbt_valid_from"
 	$(DBT) seed
+
+# fct_trips_microbatch: backfill Jan 1–3 as three daily batches (run in
+# parallel), then re-run Jan 2 alone, which replaces only that day's rows.
+microbatch-demo:
+	$(DBT) run -s fct_trips_microbatch --vars '{microbatch_demo: true}' --full-refresh --event-time-start 2019-01-01 --event-time-end 2019-01-04
+	$(DBT) run -s fct_trips_microbatch --vars '{microbatch_demo: true}' --event-time-start 2019-01-02 --event-time-end 2019-01-03
+	$(DBT) show --vars '{microbatch_demo: true}' --inline "select pickup_date, count(*) as trips from {{ ref('fct_trips_microbatch') }} group by pickup_date order by pickup_date"
 
 docs:
 	$(DBT) docs generate

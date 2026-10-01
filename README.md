@@ -49,6 +49,10 @@ make incremental-demo
 make snapshot-demo
 ```
 
+```bash
+make microbatch-demo
+```
+
 Use `make docs-serve` to browse the docs and lineage graph.
 
 Redis is published on **6380** so it doesn't collide with a local Redis on
@@ -114,7 +118,7 @@ materializations, so the adapter covers what isn't SQL:
 | Connection | `adbc_driver_manager` DB-API, autocommit (the driver has no transactions, so `BEGIN`/`COMMIT` are no-ops) |
 | Metadata | Relations, columns and the docs catalog come from ADBC `GetObjects` |
 | Temporary tables | `make_temp_relation` renders them unqualified (a schema-qualified name always means a permanent table), and their columns are looked up under `pg_temp` |
-| Incremental strategies | `append`, `delete+insert` (the default with a `unique_key`) and `merge` |
+| Incremental strategies | `append`, `delete+insert` (the default with a `unique_key`), `merge`, and `microbatch` (each batch replaces its `event_time` window; batches can run in parallel) |
 | Loading | Seeds and the raw CSV go through Arrow bulk ingest, which is much faster than INSERTs |
 | Cross-database macros | dbt-core's defaults work natively except two: `safe_cast` uses the driver's `TRY_CAST`, and `listagg` with `limit_num` raises a clear error (it needs arrays). `tests/assert_cross_db_macros.sql` checks them all |
 | Model contracts | An enforced contract creates the table from its DDL, then inserts the rows (as on dbt-postgres). `not_null` is enforced by the driver; `primary_key` and `unique` are accepted but not enforced; `check` and `foreign_key` are skipped with a warning |
@@ -162,7 +166,6 @@ What's left is in the adapter, plus one driver feature:
 
 | Doesn't work yet | Effect in dbt | Issue |
 |-|-|-|
-| The `microbatch` incremental strategy | `not valid for this adapter` | [#7](https://github.com/alberttwong/redis-dbt-project/issues/7) |
 | `persist_docs` | Fails the model; the driver has no `COMMENT ON` yet ([driver #72](https://github.com/alberttwong/redis-adbc-driver/issues/72)) | [#9](https://github.com/alberttwong/redis-dbt-project/issues/9) |
 | `grants` | Fails the model; Redis controls access with ACLs, not `GRANT` | [#10](https://github.com/alberttwong/redis-dbt-project/issues/10) |
 
