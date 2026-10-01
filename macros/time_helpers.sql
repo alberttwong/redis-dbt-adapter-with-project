@@ -9,8 +9,3 @@
   end
 {%- endmacro %}
 
-{#- Round to `scale` decimals. The driver has no ROUND() yet
-    (alberttwong/redis-adbc-driver#24), but CAST to NUMERIC rounds. -#}
-{% macro round_to(expr, scale=2) -%}
-  cast({{ expr }} as numeric(18, {{ scale }}))
-{%- endmacro %}

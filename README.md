@@ -5,9 +5,13 @@ A dbt Core project that runs entirely on Redis 8, through the
 three things:
 
 - loads the NYC TLC yellow-taxi trips CSV into Redis,
-- transforms it with ordinary dbt SQL models (views, tables, an incremental
-  fact table, joins, CTEs, HAVING, subqueries),
+- transforms it with ordinary dbt SQL: views, tables, an incremental MERGE
+  fact table, a snapshot, joins, window functions, CTEs and `QUALIFY`,
 - tests and documents it with dbt's standard commands.
+
+dbt's own default materializations do the work: tables, views, incremental
+models (temporary tables plus `MERGE` or delete+insert) and snapshots. The SQL
+dbt generates runs on the driver unchanged.
 
 ```
 dbt  ──►  dbt-redis-adbc (adapter/)  ──►  adbc_driver_manager  ──►  libadbc_driver_redis  ──►  Redis 8
@@ -23,19 +27,26 @@ toolchain (to build the driver).
 make setup
 ```
 
-`make setup` runs `uv sync`, builds the driver into `driver/` (pinned to
-`54b83af`; override with `DRIVER_VERSION`), downloads
-the CSV into `data/`, and starts Redis 8.4 on port 6380.
+`make setup` does four things:
+
+- runs `uv sync`
+- builds the driver into `driver/`. It's pinned to driver commit `b905827`; override it with `DRIVER_VERSION`.
+- downloads the CSV into `data/`
+- starts Redis **8.6.2**, the version Redis Cloud runs, on port 6380
 
 ```bash
 make all
 ```
 
 `make all` runs `dbt debug`, `seed`, `run-operation load_raw_trips`, `build`
-and `docs generate`.
+and `docs generate`. To try the incremental model and the snapshot:
 
 ```bash
 make incremental-demo
+```
+
+```bash
+make snapshot-demo
 ```
 
 Use `make docs-serve` to browse the docs and lineage graph.
@@ -50,15 +61,15 @@ with `REDIS_ADBC_DRIVER`.
 | Command | What happens in Redis |
 |-|-|
 | `dbt debug` | Opens an ADBC connection; the driver checks that the Query Engine is available (`FT._LIST`) |
-| `dbt seed` | 4 lookup CSVs (zones, payment types, rate codes, vendors) → tables via ADBC bulk ingest |
+| `dbt seed` | 4 lookup CSVs (zones, payment types, rate codes, vendors), loaded with ADBC bulk ingest; reloads use `TRUNCATE` |
 | `dbt run-operation load_raw_trips` | Streams the 134 MB gzipped CSV with pyarrow, keeps every 50th row (~153k trips across January), adds `trip_id` (the trip's row number in the file), and bulk-ingests it into `raw.yellow_tripdata` in about 6 s |
-| `dbt run` | 5 views, 7 tables (CTAS + `ALTER TABLE … RENAME` swap), 1 incremental model |
-| `dbt test` / `dbt build` | 43 data tests (`unique`, `not_null`, `accepted_values`, `relationships`, custom generic `non_negative` / `in_range`, 2 singular tests) and 2 unit tests |
-| `dbt run --full-refresh`, incremental runs | delete+insert on `trip_id`, reprocessing the 6 hours before the latest pickup |
+| `dbt run` | 5 views and 8 tables, rebuilt with dbt's create-then-`ALTER … RENAME` swap; plus 1 incremental model, built by `CREATE TEMPORARY TABLE` then `MERGE` |
+| `dbt snapshot` | `zones_snapshot`: SCD type 2 history of the zone lookup (check strategy), written by dbt's snapshot `MERGE` |
+| `dbt test` / `dbt build` | 48 data tests (`unique`, `not_null`, `accepted_values`, `relationships`, custom generic `non_negative` / `in_range`, 2 singular tests) and 2 unit tests |
 | `dbt show`, `dbt compile`, `dbt ls` | Previews, inline queries, and the analysis in `analyses/` |
 | `dbt docs generate` | Catalog built from ADBC `GetObjects` (column types, tables vs views) |
 
-A clean `make all` takes about 90 s on a laptop. It ends with 61 passes and 1
+A clean `make all` takes about 80 s on a laptop. It ends with 68 passes and 1
 **intended** warning: the source test flags a $623,261.66 fare in the raw
 data, which staging filters out.
 
@@ -66,12 +77,14 @@ data, which staging filters out.
 
 ```
 models/
-  staging/        views over raw + seeds: rename, type, filter, derive hour/day part
+  staging/        views over raw + seeds: rename, type, filter, derive hour/weekday/duration
   intermediate/   int_trips_enriched: trips ⋈ zones (×2) ⋈ payment types ⋈ rate codes ⋈ vendors
-  marts/          fct_trips (incremental), dim_zones, agg_daily_revenue, agg_hourly_demand,
+  marts/          fct_trips (incremental MERGE), dim_zones, agg_daily_revenue (7-day rolling
+                  average, LAG, RANK), agg_top_pickup_zones (RANK … QUALIFY), agg_hourly_demand,
                   agg_borough_flows, agg_payment_mix, agg_airport_trips
+snapshots/        zones_snapshot (SCD type 2 of the zone lookup)
 seeds/            taxi_zone_lookup, payment_types, rate_codes, vendors
-macros/           load_raw_trips (run-operation), day_part, round_to
+macros/           load_raw_trips and rename_zone (run-operations), day_part
 tests/            generic (non_negative, in_range) and singular tests
 analyses/         top_pickup_zones_by_day_part
 adapter/          the dbt-redis-adbc adapter package (installed editable by uv)
@@ -86,56 +99,49 @@ Useful vars (defaults are in `dbt_project.yml`):
 | `raw_trips_limit` | none | Cap on rows loaded |
 | `trips_start` / `trips_end` | all of January 2019 | Pickup window kept by staging |
 | `max_total_amount` | `2000` | Larger totals are treated as data errors |
-| `lookback_hours` | `6` | Hours before the latest loaded pickup that each incremental run reprocesses |
+| `lookback_hours` | `6` | Hours before the latest loaded pickup that each incremental run re-merges |
+| `top_zones_per_borough` | `3` | Zones kept per borough by `agg_top_pickup_zones` |
 
-## Why there's an adapter
+## What the adapter does
 
 dbt only connects to a database through an adapter package, and there is no
-generic ADBC adapter. `adapter/` is a thin one: about 500 lines of Python
-plus a few macros. It sends every query through the driver unchanged, and it
-covers what dbt expects but the driver doesn't provide:
+generic ADBC adapter. `adapter/` is a small one: about 520 lines of Python and
+55 lines of macros. The driver runs the SQL of dbt's default macros and
+materializations, so the adapter covers what isn't SQL:
 
-| dbt expects | Driver (54b83af) | Adapter does |
-|-|-|-|
-| Transactions (`BEGIN`/`COMMIT`) | Autocommit only | No-op begin/commit; connects with `autocommit=True` |
-| Table and column metadata | ADBC `GetObjects` | `list_relations`, `get_columns_in_relation` and the docs catalog use `GetObjects` |
-| View rename-swap (`ALTER … RENAME`) | `ALTER TABLE` finds tables only ([#22](https://github.com/alberttwong/redis-adbc-driver/issues/22)) | Views use `CREATE OR REPLACE VIEW`; tables keep dbt's default swap |
-| Temporary tables for incremental | Not supported ([#21](https://github.com/alberttwong/redis-adbc-driver/issues/21)) | Stages into a regular `__dbt_tmp` table |
-| `delete+insert` incremental | Large `IN (SELECT …)` is slow ([#17](https://github.com/alberttwong/redis-adbc-driver/issues/17)) | Finds matched keys with a join and deletes only those |
-| `TRUNCATE` | Not supported ([#23](https://github.com/alberttwong/redis-adbc-driver/issues/23)) | `DELETE FROM` |
-| `DROP SCHEMA` on a non-empty schema | Fails, no `CASCADE` ([#23](https://github.com/alberttwong/redis-adbc-driver/issues/23)) | Drops the schema's tables first |
-| Batched parameterized `INSERT` for seeds | Works (fixed in [#15](https://github.com/alberttwong/redis-adbc-driver/pull/15)) | Seeds load through Arrow bulk ingest, which is much faster |
-| Loading a large CSV | n/a | `adapter.load_csv_file` streams the file with pyarrow into ADBC ingest |
+| Area | Adapter |
+|-|-|
+| Connection | `adbc_driver_manager` DB-API, autocommit (the driver has no transactions, so `BEGIN`/`COMMIT` are no-ops) |
+| Metadata | Relations, columns and the docs catalog come from ADBC `GetObjects` |
+| Temporary tables | `make_temp_relation` renders them unqualified (a schema-qualified name always means a permanent table), and their columns are looked up under `pg_temp` |
+| Incremental strategies | `append`, `delete+insert` (the default with a `unique_key`) and `merge` |
+| Loading | Seeds and the raw CSV go through Arrow bulk ingest, which is much faster than INSERTs |
+| Small dialect bits | `?` bind parameters, `CURRENT_TIMESTAMP`, and a subquery wrapper for `dbt show --limit` |
 
 Profile options (`profiles.yml`): `driver`, `uri`, `username`, `password`,
 `database` (always `redis`), `schema`, `threads`, and `aggregate_pushdown`
 (`exact` / `all` / `none`).
 
-## Working within the driver's SQL
+## Driver issues found along the way
 
-The models use the driver's SQL directly: `EXTRACT`, interval arithmetic
-(`dropoff - pickup`, `max(pickup) - interval '6 hours'`), `CASE`, joins,
-CTEs, `HAVING`, and scalar subqueries. One function is still missing:
+Building this project turned up these issues, all filed on
+[alberttwong/redis-adbc-driver](https://github.com/alberttwong/redis-adbc-driver/issues).
+All are fixed on the pinned driver.
 
-- **Rounding:** there's no `ROUND` yet
-  ([#24](https://github.com/alberttwong/redis-adbc-driver/issues/24)), so
-  `round_to(expr, s)` is `CAST(expr AS NUMERIC(18, s))`.
-
-## Driver issues
-
-All are filed on [alberttwong/redis-adbc-driver](https://github.com/alberttwong/redis-adbc-driver/issues):
-
-| Issue | Effect on this project |
+| Issue | Fixed in |
 |-|-|
-| [#13](https://github.com/alberttwong/redis-adbc-driver/issues/13) bound string parameters read freed memory | Fixed in #15 |
-| [#17](https://github.com/alberttwong/redis-adbc-driver/issues/17) large `IN (SELECT …)` is O(n×m): 57 s for 82k keys against 4.7 s for a join | Incremental runs match keys with a join first |
-| [#18](https://github.com/alberttwong/redis-adbc-driver/issues/18) correlated `EXISTS` runs once per outer row: 28 s against an empty table | Avoided |
-| [#19](https://github.com/alberttwong/redis-adbc-driver/issues/19) window functions | No `row_number()` de-duplication; blocks `dbt snapshot` |
-| [#20](https://github.com/alberttwong/redis-adbc-driver/issues/20) `MERGE`, `UPDATE … FROM`, `DELETE … USING` | Blocks `dbt snapshot` and the `merge` incremental strategy |
-| [#21](https://github.com/alberttwong/redis-adbc-driver/issues/21) temporary tables | Adapter stages into `__dbt_tmp` tables |
-| [#22](https://github.com/alberttwong/redis-adbc-driver/issues/22) renaming views | Adapter uses `CREATE OR REPLACE VIEW` |
-| [#23](https://github.com/alberttwong/redis-adbc-driver/issues/23) `INSERT … (SELECT)`, `TRUNCATE`, `DROP SCHEMA … CASCADE` | Adapter works around all three |
-| [#24](https://github.com/alberttwong/redis-adbc-driver/issues/24) `ROUND`, `SUBSTRING`, `NULLIF` and other scalar functions | `round_to` macro |
+| [#13](https://github.com/alberttwong/redis-adbc-driver/issues/13) Bound string parameters read freed memory | [#15](https://github.com/alberttwong/redis-adbc-driver/pull/15) |
+| [#17](https://github.com/alberttwong/redis-adbc-driver/issues/17), [#18](https://github.com/alberttwong/redis-adbc-driver/issues/18) Slow `IN (SELECT …)` (57 s → 0.9 s) and correlated `EXISTS` (28 s → 2 ms) | [#38](https://github.com/alberttwong/redis-adbc-driver/pull/38) |
+| [#19](https://github.com/alberttwong/redis-adbc-driver/issues/19) Window functions | [#35](https://github.com/alberttwong/redis-adbc-driver/pull/35) |
+| [#20](https://github.com/alberttwong/redis-adbc-driver/issues/20) `MERGE`, `UPDATE … FROM`, `DELETE … USING` | [#29](https://github.com/alberttwong/redis-adbc-driver/pull/29) |
+| [#21](https://github.com/alberttwong/redis-adbc-driver/issues/21) Temporary tables | [#30](https://github.com/alberttwong/redis-adbc-driver/pull/30) |
+| [#22](https://github.com/alberttwong/redis-adbc-driver/issues/22) Renaming views | [#27](https://github.com/alberttwong/redis-adbc-driver/pull/27) |
+| [#23](https://github.com/alberttwong/redis-adbc-driver/issues/23) `INSERT … (SELECT)`, `TRUNCATE`, `DROP … CASCADE` | [#25](https://github.com/alberttwong/redis-adbc-driver/pull/25) |
+| [#24](https://github.com/alberttwong/redis-adbc-driver/issues/24) `ROUND`, `SUBSTRING`, `NULLIF` and other scalar functions | [#28](https://github.com/alberttwong/redis-adbc-driver/pull/28) |
+| [#31](https://github.com/alberttwong/redis-adbc-driver/issues/31), [#32](https://github.com/alberttwong/redis-adbc-driver/issues/32) `SELECT DISTINCT` / `DISTINCT ON`, qualified `t.*` | [#39](https://github.com/alberttwong/redis-adbc-driver/pull/39) |
+| [#33](https://github.com/alberttwong/redis-adbc-driver/issues/33) `CONCAT` returned NULL for any NULL argument | [#34](https://github.com/alberttwong/redis-adbc-driver/pull/34) |
+| [#36](https://github.com/alberttwong/redis-adbc-driver/issues/36) Wrong results: rounded constants pushed into the index (`int_col > 1.5`) | [#40](https://github.com/alberttwong/redis-adbc-driver/pull/40) |
+| [#37](https://github.com/alberttwong/redis-adbc-driver/issues/37) Slow literal `IN` lists over 1,000 values (66 s → 1 s) | [#41](https://github.com/alberttwong/redis-adbc-driver/pull/41) |
 
 ## Looking at the data in Redis
 
@@ -146,7 +152,7 @@ docker exec redis-dbt-taxi redis-cli HGETALL raw:yellow_tripdata:1
 ```
 
 ```bash
-docker exec redis-dbt-taxi redis-cli FT.INFO idx:taxi_marts:fct_trips
+docker exec redis-dbt-taxi redis-cli FT.INFO idx:raw:yellow_tripdata
 ```
 
 Tables built by dbt's rename-swap keep the row key prefix and index of the

@@ -1,9 +1,9 @@
-{#- Trip fact table, built incrementally with delete+insert on trip_id.
+{#- Trip fact table, built incrementally with MERGE on trip_id.
     Each run reloads the last `lookback_hours` before the latest pickup
     already in the table (to pick up late-arriving trips) plus everything
     after it. -#}
 
-{{ config(materialized='incremental', unique_key='trip_id') }}
+{{ config(materialized='incremental', unique_key='trip_id', incremental_strategy='merge') }}
 
 select *
 from {{ ref('int_trips_enriched') }}

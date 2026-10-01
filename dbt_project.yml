@@ -22,6 +22,8 @@ vars:
   trips_end: "2019-02-01 00:00:00"
   # Incremental runs of fct_trips reprocess this many hours before the latest pickup.
   lookback_hours: 6
+  # agg_top_pickup_zones keeps this many zones per borough.
+  top_zones_per_borough: 3
   # Trips with a larger total are treated as data errors and dropped in staging.
   max_total_amount: 2000
 

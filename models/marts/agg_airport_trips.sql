@@ -16,10 +16,10 @@ select
     airport,
     direction,
     count(*)                                    as trips,
-    {{ round_to('avg(trip_distance)', 2) }}     as avg_miles,
-    {{ round_to('avg(trip_duration_minutes)', 1) }} as avg_minutes,
-    {{ round_to('avg(total_amount)', 2) }}      as avg_total,
-    {{ round_to('avg(tolls_amount)', 2) }}      as avg_tolls
+    round(avg(trip_distance), 2)                as avg_miles,
+    round(avg(trip_duration_minutes), 1)        as avg_minutes,
+    round(avg(total_amount), 2)                 as avg_total,
+    round(avg(tolls_amount), 2)                 as avg_tolls
 from airport_trips
 group by airport, direction
 order by trips desc
