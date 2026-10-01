@@ -125,15 +125,15 @@ class RedisAdbcAdapter(SQLAdapter):
     Relation = RedisAdbcRelation
     Column = Column
 
-    # Model contract constraints: the driver checks NOT NULL on every write,
-    # accepts PRIMARY KEY / UNIQUE without enforcing them, and doesn't parse
-    # column-level CHECK or REFERENCES (dbt then warns and leaves them out).
+    # Model contract constraints: the driver checks NOT NULL and CHECK on every
+    # write, and accepts PRIMARY KEY, UNIQUE and REFERENCES without enforcing
+    # them.
     CONSTRAINT_SUPPORT = {
         ConstraintType.not_null: ConstraintSupport.ENFORCED,
+        ConstraintType.check: ConstraintSupport.ENFORCED,
         ConstraintType.primary_key: ConstraintSupport.NOT_ENFORCED,
         ConstraintType.unique: ConstraintSupport.NOT_ENFORCED,
-        ConstraintType.check: ConstraintSupport.NOT_SUPPORTED,
-        ConstraintType.foreign_key: ConstraintSupport.NOT_SUPPORTED,
+        ConstraintType.foreign_key: ConstraintSupport.NOT_ENFORCED,
     }
 
     # Microbatch batches can run in parallel: each one uses its own
