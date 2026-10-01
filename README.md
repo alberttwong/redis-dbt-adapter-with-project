@@ -30,7 +30,7 @@ make setup
 `make setup` does four things:
 
 - runs `uv sync`
-- builds the driver into `driver/`. It's pinned to driver commit `f2b45ab`; override it with `DRIVER_VERSION`.
+- builds the driver into `driver/`. It's pinned to driver `v0.0.6`; override it with `DRIVER_VERSION`.
 - downloads the CSV into `data/`
 - starts Redis **8.6.2**, the version Redis Cloud runs, on port 6380
 
@@ -69,11 +69,11 @@ with `REDIS_ADBC_DRIVER`.
 | `dbt run-operation load_raw_trips` | Streams the 134 MB gzipped CSV with pyarrow, keeps every 50th row (~153k trips across January), adds `trip_id` (the trip's row number in the file), and bulk-ingests it into `raw.yellow_tripdata` in about 6 s |
 | `dbt run` | 5 views and 8 tables, rebuilt with dbt's create-then-`ALTER … RENAME` swap; plus 1 incremental model, built by `CREATE TEMPORARY TABLE` then `MERGE` |
 | `dbt snapshot` | `zones_snapshot`: SCD type 2 history of the zone lookup (check strategy), written by dbt's snapshot `MERGE` |
-| `dbt test` / `dbt build` | 48 data tests (`unique`, `not_null`, `accepted_values`, `relationships`, custom generic `non_negative` / `in_range`, 2 singular tests) and 2 unit tests |
+| `dbt test` / `dbt build` | 49 data tests (`unique`, `not_null`, `accepted_values`, `relationships`, custom generic `non_negative` / `in_range`, 3 singular tests) and 2 unit tests |
 | `dbt show`, `dbt compile`, `dbt ls` | Previews, inline queries, and the analysis in `analyses/` |
-| `dbt docs generate` | Catalog built from ADBC `GetObjects` (column types, tables vs views) |
+| `dbt docs generate` | Catalog built from ADBC `GetObjects` (column types, tables vs views), with the comments the marts store through `persist_docs` |
 
-A clean `make all` takes about 80 s on a laptop. It ends with 68 passes and 1
+A clean `make all` takes about 80 s on a laptop. It ends with 69 passes and 1
 **intended** warning: the source test flags a $623,261.66 fare in the raw
 data, which staging filters out.
 
@@ -109,14 +109,16 @@ Useful vars (defaults are in `dbt_project.yml`):
 ## What the adapter does
 
 dbt only connects to a database through an adapter package, and there is no
-generic ADBC adapter. `adapter/` is a small one: about 520 lines of Python and
-55 lines of macros. The driver runs the SQL of dbt's default macros and
+generic ADBC adapter. `adapter/` is a small one: about 600 lines of Python and
+170 lines of macros. The driver runs the SQL of dbt's default macros and
 materializations, so the adapter covers what isn't SQL:
 
 | Area | Adapter |
 |-|-|
 | Connection | `adbc_driver_manager` DB-API, autocommit (the driver has no transactions, so `BEGIN`/`COMMIT` are no-ops) |
-| Metadata | Relations, columns and the docs catalog come from ADBC `GetObjects` |
+| Metadata | Relations, columns and the docs catalog come from ADBC `GetObjects`; table comments come from `information_schema.tables` |
+| `persist_docs` | Descriptions are stored with `COMMENT ON TABLE` / `VIEW` / `COLUMN`; the marts turn it on |
+| `grants` | Skipped with a warning (see [Known limitations](#known-limitations)) |
 | Temporary tables | `make_temp_relation` renders them unqualified (a schema-qualified name always means a permanent table), and their columns are looked up under `pg_temp` |
 | Incremental strategies | `append`, `delete+insert` (the default with a `unique_key`), `merge`, and `microbatch` (each batch replaces its `event_time` window; batches can run in parallel) |
 | Loading | Seeds and the raw CSV go through Arrow bulk ingest, which is much faster than INSERTs |
@@ -158,24 +160,21 @@ All of them are fixed on the pinned driver.
 | [#52](https://github.com/alberttwong/redis-adbc-driver/issues/52) `WITH RECURSIVE`, `LATERAL`, `ANY` / `ALL`, `NATURAL JOIN`, `GENERATE_SERIES` | [#68](https://github.com/alberttwong/redis-adbc-driver/pull/68) |
 | [#53](https://github.com/alberttwong/redis-adbc-driver/issues/53) JSON functions | [#64](https://github.com/alberttwong/redis-adbc-driver/pull/64) |
 | [#54](https://github.com/alberttwong/redis-adbc-driver/issues/54) Renamed tables keep their old key prefix (opt-in fix: `rename_rekey`) | [#69](https://github.com/alberttwong/redis-adbc-driver/pull/69) |
+| [#72](https://github.com/alberttwong/redis-adbc-driver/issues/72) `COMMENT ON` (dbt's `persist_docs`) | [#73](https://github.com/alberttwong/redis-adbc-driver/pull/73) |
 
 ## Known limitations
 
-The driver now runs the SQL that dbt and its cross-database macros generate.
-What's left is in the adapter, plus one driver feature:
-
-| Doesn't work yet | Effect in dbt | Issue |
-|-|-|-|
-| `persist_docs` | Fails the model; the driver has no `COMMENT ON` yet ([driver #72](https://github.com/alberttwong/redis-adbc-driver/issues/72)) | [#9](https://github.com/alberttwong/redis-dbt-project/issues/9) |
-| `grants` | Fails the model; Redis controls access with ACLs, not `GRANT` | [#10](https://github.com/alberttwong/redis-dbt-project/issues/10) |
-
-Two limits come from the design rather than a missing feature:
+The driver runs the SQL that dbt and its cross-database macros generate, and
+the dbt features above all work. Three limits come from the design:
 
 - **No transactions.** Every statement autocommits, so a run that stops in
   the middle of a materialization can leave a `__dbt_tmp` or `__dbt_backup`
   relation behind. dbt drops those at the start of the next run of that
   model.
 - **SQL models only.** dbt Python models aren't supported.
+- **No grants.** Redis controls access per user with ACLs (key patterns and
+  commands), not SQL privileges on tables, so a `grants` config is skipped
+  with a warning.
 
 ## Looking at the data in Redis
 

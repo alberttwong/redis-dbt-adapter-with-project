@@ -38,6 +38,10 @@ models:
     marts:
       +schema: marts
       +materialized: table
+      # Store the descriptions as table and column comments in Redis.
+      +persist_docs:
+        relation: true
+        columns: true
 
 seeds:
   nyc_taxi:

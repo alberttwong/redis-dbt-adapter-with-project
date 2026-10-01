@@ -71,7 +71,7 @@ models:
               arguments: {min_value: 1, max_value: "{{ var('top_zones_per_borough') }}"}
 
   - name: agg_hourly_demand
-    description: Demand by hour of day (built from CAST(ts AS TIME) since the driver has no EXTRACT).
+    description: Average demand, trip length, speed and fare by hour of pickup across the month.
     columns:
       - name: pickup_hour
         data_tests: [unique, not_null]
