@@ -117,6 +117,7 @@ materializations, so the adapter covers what isn't SQL:
 | Incremental strategies | `append`, `delete+insert` (the default with a `unique_key`) and `merge` |
 | Loading | Seeds and the raw CSV go through Arrow bulk ingest, which is much faster than INSERTs |
 | Cross-database macros | dbt-core's defaults work natively except two: `safe_cast` uses the driver's `TRY_CAST`, and `listagg` with `limit_num` raises a clear error (it needs arrays). `tests/assert_cross_db_macros.sql` checks them all |
+| Model contracts | An enforced contract creates the table from its DDL, then inserts the rows (as on dbt-postgres). `not_null` is enforced by the driver; `primary_key` and `unique` are accepted but not enforced; `check` and `foreign_key` are skipped with a warning |
 | Small dialect bits | `?` bind parameters, `CURRENT_TIMESTAMP`, and a subquery wrapper for `dbt show --limit` |
 
 Profile options (`profiles.yml`): `driver`, `uri`, `username`, `password`,
@@ -161,7 +162,6 @@ What's left is in the adapter, plus one driver feature:
 
 | Doesn't work yet | Effect in dbt | Issue |
 |-|-|-|
-| Model contracts | `contract: {enforced: true}` fails with a syntax error | [#5](https://github.com/alberttwong/redis-dbt-project/issues/5) |
 | The `microbatch` incremental strategy | `not valid for this adapter` | [#7](https://github.com/alberttwong/redis-dbt-project/issues/7) |
 | `persist_docs` | Fails the model; the driver has no `COMMENT ON` yet ([driver #72](https://github.com/alberttwong/redis-adbc-driver/issues/72)) | [#9](https://github.com/alberttwong/redis-dbt-project/issues/9) |
 | `grants` | Fails the model; Redis controls access with ACLs, not `GRANT` | [#10](https://github.com/alberttwong/redis-dbt-project/issues/10) |
