@@ -88,7 +88,7 @@ it connects.
 | `dbt snapshot` | `zones_snapshot`: SCD type 2 history of the zone lookup (check strategy; a deleted zone gets a closing version), written by dbt's snapshot `MERGE` |
 | `dbt test` / `dbt build` | 51 data tests (`unique`, `not_null`, `accepted_values`, `relationships`, custom generic `non_negative` / `in_range`, 3 singular tests) and 2 unit tests |
 | `dbt show`, `dbt compile`, `dbt ls` | Previews, inline queries, and the analysis in `analyses/` |
-| `dbt build --empty --exclude-resource-type snapshot` | Builds and tests every model with no rows, in about 6 s. dbt reads each ref and source as `(select * from … where false limit 0)`, which the driver answers without reading the table. Tables and seeds are left empty (incremental models keep their rows), so run `make all` afterwards. Leave out the snapshot: with an empty source, `hard_deletes: new_record` would record every zone as deleted |
+| `dbt build --empty --exclude-resource-type snapshot` | Builds and tests every model with no rows, in about 6 s. dbt reads each ref and source as `(select * from … where false limit 0)`, which the driver answers without reading the table. Tables, views and seeds are left empty (a view keeps the `where false limit 0` in its SQL; incremental models keep their rows), so run `make all` afterwards. Leave out the snapshot: with an empty source, `hard_deletes: new_record` would record every zone as deleted |
 | `dbt docs generate` | Catalog built from ADBC `GetObjects` (column types, tables vs views), with the comments the marts store through `persist_docs` |
 
 A clean `make all` takes 1.5–2 minutes on a laptop. It ends with 72 passes and 1
@@ -218,7 +218,9 @@ Three limits come from the design:
 - **No transactions.** Every statement autocommits, so a run that stops in
   the middle of a materialization can leave a `__dbt_tmp` or `__dbt_backup`
   relation behind. dbt drops those at the start of the next run of that
-  model.
+  model. The run's temporary tables (`pg_temp_N`) stay until the driver's
+  2-minute heartbeat for that connection runs out; the next connection then
+  removes them.
 - **SQL models only.** dbt Python models aren't supported, and neither are
   materialized views (`materialized='materialized_view'` stops with a clear
   error).
@@ -226,9 +228,21 @@ Three limits come from the design:
   commands), not SQL privileges on tables, so a `grants` config is skipped
   with a warning.
 
+## Access control
+
+dbt can run as a Redis ACL user (`username` / `password` in `profiles.yml`).
+The commands and key patterns the driver needs, per feature, and a read-only
+user recipe are in the
+[driver's README](https://github.com/alberttwong/redis-adbc-driver#server-requirements).
+A read-only user can run `dbt show`, the data tests
+and `docs generate`. Unit tests and snapshots create temporary tables, which
+need `INCRBY` on the driver's metadata keys, so they fail for a read-only
+user (dbt reports the unit-test failure as a data-type mismatch).
+
 ## Looking at the data in Redis
 
-Each row is a HASH, and each table has a RediSearch index:
+Each row is a HASH, and each table has a RediSearch index. On a cluster, add
+`-c` to `redis-cli` so it follows the key to its shard:
 
 ```bash
 docker exec redis-dbt-taxi redis-cli HGETALL raw:yellow_tripdata:1
