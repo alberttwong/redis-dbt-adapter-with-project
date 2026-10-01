@@ -1,6 +1,6 @@
 # dbt on Redis: NYC taxi trips
 
-A dbt Core project that runs entirely on Redis 8, through the
+A dbt Core project that tests the DBT Redis adapter which is built on the
 [Redis ADBC driver](https://github.com/alberttwong/redis-adbc-driver). It does
 three things:
 
