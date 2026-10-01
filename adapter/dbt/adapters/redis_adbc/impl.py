@@ -21,6 +21,7 @@ from dbt_common.exceptions import DbtRuntimeError
 
 from dbt.adapters.base import BaseRelation, available
 from dbt.adapters.base.impl import ConstraintSupport
+from dbt.adapters.capability import Capability, CapabilityDict, CapabilitySupport, Support
 from dbt.adapters.base.column import Column
 from dbt.adapters.base.relation import AdapterTrackingRelationInfo, InformationSchema
 from dbt.adapters.contracts.relation import Policy, RelationType
@@ -135,6 +136,12 @@ class RedisAdbcAdapter(SQLAdapter):
         ConstraintType.foreign_key: ConstraintSupport.NOT_SUPPORTED,
     }
 
+    # Microbatch batches can run in parallel: each one uses its own
+    # connection, temporary table and event_time window.
+    _capabilities = CapabilityDict(
+        {Capability.MicrobatchConcurrency: CapabilitySupport(support=Support.Full)}
+    )
+
     @classmethod
     def get_adapter_run_info(cls, config) -> AdapterTrackingRelationInfo:
         # The base class derives the module name from the class name
@@ -247,7 +254,7 @@ class RedisAdbcAdapter(SQLAdapter):
         ]
 
     def valid_incremental_strategies(self):
-        return ["append", "delete+insert", "merge"]
+        return ["append", "delete+insert", "merge", "microbatch"]
 
     def _get_one_catalog(
         self,
