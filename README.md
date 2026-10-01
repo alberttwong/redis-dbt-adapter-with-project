@@ -80,9 +80,9 @@ it connects.
 
 | Command | What happens in Redis |
 |-|-|
-| `dbt debug` | Opens an ADBC connection; the driver checks that the Query Engine is available (`FT._LIST`) |
+| `dbt debug` | Opens an ADBC connection. The driver checks that the Query Engine is available (`FT._LIST`) and that `FT.AGGREGATE` works, which is how it refuses Redis Flex |
 | `dbt seed` | 4 lookup CSVs (zones, payment types, rate codes, vendors), loaded with ADBC bulk ingest; reloads use `TRUNCATE` |
-| `dbt run-operation load_raw_trips` | Streams the 134 MB gzipped CSV with pyarrow, keeps every 50th row (~153k trips across January), adds `trip_id` (the trip's row number in the file), and bulk-ingests it into `raw.yellow_tripdata` in about 6 s |
+| `dbt run-operation load_raw_trips` | Streams the 134 MB gzipped CSV with pyarrow, keeps every 50th row (~153k trips across January), adds `trip_id` (the trip's row number in the file), and bulk-ingests it into `raw.yellow_tripdata` in 6–10 s |
 | `dbt run` | 5 views and 8 tables, rebuilt with dbt's create-then-`ALTER … RENAME` swap; plus 1 incremental model, built by `CREATE TEMPORARY TABLE` then `MERGE`. `dim_zones` has an enforced contract, so it's created from its DDL (with `NOT NULL` and `CHECK` constraints) and then filled with `INSERT`. The marts' descriptions are stored with `COMMENT ON` |
 | `dbt run --event-time-start … --event-time-end …` | `fct_trips_microbatch` (off unless `microbatch_demo` is set): one batch per pickup day; each batch deletes its day, then inserts it |
 | `dbt snapshot` | `zones_snapshot`: SCD type 2 history of the zone lookup (check strategy; a deleted zone gets a closing version), written by dbt's snapshot `MERGE` |
@@ -91,7 +91,7 @@ it connects.
 | `dbt build --empty --exclude-resource-type snapshot` | Builds and tests every model with no rows, in about 6 s. dbt reads each ref and source as `(select * from … where false limit 0)`, which the driver answers without reading the table. Tables and seeds are left empty (incremental models keep their rows), so run `make all` afterwards. Leave out the snapshot: with an empty source, `hard_deletes: new_record` would record every zone as deleted |
 | `dbt docs generate` | Catalog built from ADBC `GetObjects` (column types, tables vs views), with the comments the marts store through `persist_docs` |
 
-A clean `make all` takes about 80 s on a laptop. It ends with 69 passes and 1
+A clean `make all` takes 1.5–2 minutes on a laptop. It ends with 69 passes and 1
 **intended** warning: the source test flags a $623,261.66 fare in the raw
 data, which staging filters out.
 
@@ -147,16 +147,17 @@ materializations, so the adapter covers what isn't SQL:
 | Model contracts | An enforced contract creates the table from its DDL, then inserts the rows (as on dbt-postgres). `not_null` and `check` are enforced by the driver; `primary_key`, `unique` and `foreign_key` are accepted but not enforced (dbt warns) |
 | Small dialect bits | `?` bind parameters, `CURRENT_TIMESTAMP`, a subquery wrapper for `dbt show --limit`, and no alias on the subqueries `--empty` and microbatch put around refs, so a model's own alias (`from {{ ref('x') }} z`) still works |
 
-Profile options (`profiles.yml`): `driver`, `uri`, `username`, `password`,
-`database` (always `redis`), `schema`, `threads`, `aggregate_pushdown`
-(`exact` / `all` / `none`), and `rename_rekey` (see
+Profile options (`profiles.yml`): `driver` (the library's path; without an
+extension, the adapter adds `.dylib`, `.so` or `.dll`), `uri`, `username`,
+`password`, `database` (always `redis`), `schema`, `threads`,
+`aggregate_pushdown` (`exact` / `all` / `none`), and `rename_rekey` (see
 [Looking at the data in Redis](#looking-at-the-data-in-redis)).
 
 ## Driver issues found along the way
 
 Building this project turned up these issues, all filed on
 [alberttwong/redis-adbc-driver](https://github.com/alberttwong/redis-adbc-driver/issues).
-All of them are fixed on the pinned driver.
+All of them are fixed in the pinned driver, v0.0.7.
 
 | Issue | Fixed in |
 |-|-|
@@ -182,8 +183,8 @@ All of them are fixed on the pinned driver.
 | [#53](https://github.com/alberttwong/redis-adbc-driver/issues/53) JSON functions | [#64](https://github.com/alberttwong/redis-adbc-driver/pull/64) |
 | [#54](https://github.com/alberttwong/redis-adbc-driver/issues/54) Renamed tables keep their old key prefix (opt-in fix: `rename_rekey`) | [#69](https://github.com/alberttwong/redis-adbc-driver/pull/69) |
 | [#72](https://github.com/alberttwong/redis-adbc-driver/issues/72) `COMMENT ON` (dbt's `persist_docs`) | [#73](https://github.com/alberttwong/redis-adbc-driver/pull/73) |
-| [#75](https://github.com/alberttwong/redis-adbc-driver/issues/75) Column-level `CHECK` / `REFERENCES` didn't parse; `CHECK` wasn't enforced | [#76](https://github.com/alberttwong/redis-adbc-driver/pull/76) |
 | [#74](https://github.com/alberttwong/redis-adbc-driver/issues/74) `WHERE false` / `LIMIT 0` ran the whole query (dbt's contract checks, `--empty`: 5 s → 2 ms on `dim_zones`) | [#77](https://github.com/alberttwong/redis-adbc-driver/pull/77) |
+| [#75](https://github.com/alberttwong/redis-adbc-driver/issues/75) Column-level `CHECK` / `REFERENCES` didn't parse; `CHECK` wasn't enforced | [#76](https://github.com/alberttwong/redis-adbc-driver/pull/76) |
 | [#78](https://github.com/alberttwong/redis-adbc-driver/issues/78) Unknown functions were only caught when a row was evaluated, so they passed contract checks and `--empty` | [#79](https://github.com/alberttwong/redis-adbc-driver/pull/79) |
 
 ## Known limitations
