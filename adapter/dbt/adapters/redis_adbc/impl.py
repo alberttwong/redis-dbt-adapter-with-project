@@ -118,6 +118,10 @@ class RedisAdbcRelation(BaseRelation):
     quote_policy: Policy = field(default_factory=lambda: Policy(database=False, schema=False, identifier=False))
     renameable_relations: FrozenSet = frozenset({RelationType.Table, RelationType.View})
     replaceable_relations: FrozenSet = frozenset({RelationType.View})
+    # `--empty` and microbatch wrap each ref in a subquery. Leave it unaliased
+    # (the driver accepts that) so a model's own alias, as in
+    # `from {{ ref('x') }} z`, doesn't follow dbt's and break the SQL.
+    require_alias: bool = False
 
 
 class RedisAdbcAdapter(SQLAdapter):
