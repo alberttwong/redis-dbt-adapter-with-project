@@ -18,6 +18,7 @@ import pyarrow.compute as pc
 import pyarrow.csv as pacsv
 from dbt_common.clients.agate_helper import table_from_rows
 from dbt_common.exceptions import DbtRuntimeError
+from dbt_common.utils import filter_null_values
 
 from dbt.adapters.base import BaseRelation, available
 from dbt.adapters.base.impl import ConstraintSupport
@@ -111,6 +112,40 @@ def _sql_to_arrow(sql_type: str) -> pa.DataType:
     raise DbtRuntimeError(f"Unsupported column type for CSV load: {sql_type}")
 
 
+_TYPE_WITH_ARGS = re.compile(r"^\s*([A-Za-z ]+?)\s*\(\s*(\d+)\s*(?:,\s*(\d+)\s*)?\)\s*$")
+
+
+@dataclass
+class RedisAdbcColumn(Column):
+    """A column as dbt-postgres reports it: NUMERIC(p,s) is `numeric` with its
+    precision and scale, and VARCHAR(n) is `character varying` with its length,
+    so dbt's is_numeric() / is_string() and data_type work."""
+
+    @classmethod
+    def from_type_name(cls, name: str, type_name: str) -> "RedisAdbcColumn":
+        m = _TYPE_WITH_ARGS.match(type_name)
+        base = (m.group(1) if m else type_name).strip().lower()
+        if base in ("numeric", "decimal"):
+            if m:
+                return cls(name, "numeric", numeric_precision=int(m.group(2)), numeric_scale=int(m.group(3) or 0))
+            return cls(name, "numeric")
+        if base in ("varchar", "character varying", "text"):
+            return cls(name, "character varying", char_size=int(m.group(2)) if m else None)
+        if base in ("char", "character", "bpchar"):
+            return cls(name, "character", char_size=int(m.group(2)) if m else 1)
+        return cls(name, type_name)
+
+    @property
+    def data_type(self) -> str:
+        # An unbounded VARCHAR stays unbounded (dbt's default would render
+        # character varying(256)).
+        if self.is_string() and self.char_size is None:
+            return self.dtype
+        if self.dtype == "character":
+            return f"character({self.char_size})"
+        return super().data_type
+
+
 @dataclass(frozen=True, eq=False, repr=False)
 class RedisAdbcRelation(BaseRelation):
     # Render `schema.table`: the driver has a single catalog ("redis").
@@ -127,7 +162,7 @@ class RedisAdbcRelation(BaseRelation):
 class RedisAdbcAdapter(SQLAdapter):
     ConnectionManager = RedisAdbcConnectionManager
     Relation = RedisAdbcRelation
-    Column = Column
+    Column = RedisAdbcColumn
 
     # Model contract constraints: the driver checks NOT NULL and CHECK on every
     # write, and accepts PRIMARY KEY, UNIQUE and REFERENCES without enforcing
@@ -253,9 +288,27 @@ class RedisAdbcAdapter(SQLAdapter):
         # make_temp_relation); GetObjects lists it under pg_temp.
         schema = relation.schema if relation.include_policy.schema else "pg_temp"
         return [
-            self.Column(column=c["column_name"], dtype=c["xdbc_type_name"])
+            self.Column.from_type_name(c["column_name"], c["xdbc_type_name"])
             for c in self._table_columns(schema, relation.identifier)
         ]
+
+    def _make_match_kwargs(self, database: str, schema: str, identifier: str) -> Dict[str, str]:
+        # The driver keeps schema and table names as written and matches them
+        # case-sensitively, quoted or not (Postgres folds unquoted names to
+        # lower case). So look relations up with their case; dbt's default
+        # lower-cases them and then finds only an "approximate match".
+        if database is not None and self.config.quoting["database"] is False:
+            database = database.lower()
+        return filter_null_values({"database": database, "identifier": identifier, "schema": schema})
+
+    @available
+    def list_relations_table(self, schema_relation: BaseRelation) -> agate.Table:
+        # For the list_relations_without_caching macro (dbt-postgres's columns).
+        rows = [
+            [r.database, r.identifier, r.schema, str(r.type)]
+            for r in self.list_relations_without_caching(schema_relation)
+        ]
+        return table_from_rows(rows, ["database", "name", "schema", "type"])
 
     def _table_comments(self, schema: str) -> Dict[str, Optional[str]]:
         # GetObjects has column remarks but no table remarks.
