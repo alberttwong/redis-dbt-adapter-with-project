@@ -253,6 +253,19 @@ class RedisAdbcAdapter(SQLAdapter):
             for c in self._table_columns(schema, relation.identifier)
         ]
 
+    def _table_comments(self, schema: str) -> Dict[str, Optional[str]]:
+        # GetObjects has column remarks but no table remarks.
+        with self.connections.exception_handler("table comments"):
+            cur = self._adbc().cursor()
+            try:
+                cur.execute(
+                    "select table_name, comment from information_schema.tables where table_schema = ?",
+                    (schema,),
+                )
+                return dict(cur.fetchall())
+            finally:
+                cur.close()
+
     def valid_incremental_strategies(self):
         return ["append", "delete+insert", "merge", "microbatch"]
 
@@ -264,6 +277,7 @@ class RedisAdbcAdapter(SQLAdapter):
     ) -> agate.Table:
         rows = []
         for schema in schemas:
+            comments = self._table_comments(schema)
             for cat in self._get_objects("columns", schema=schema):
                 for s in cat["catalog_db_schemas"] or []:
                     for t in s["db_schema_tables"] or []:
@@ -274,7 +288,7 @@ class RedisAdbcAdapter(SQLAdapter):
                                     s["db_schema_name"],
                                     t["table_name"],
                                     "VIEW" if t["table_type"] == "VIEW" else "BASE TABLE",
-                                    None,
+                                    comments.get(t["table_name"]),
                                     c["column_name"],
                                     c["ordinal_position"],
                                     c["xdbc_type_name"],
