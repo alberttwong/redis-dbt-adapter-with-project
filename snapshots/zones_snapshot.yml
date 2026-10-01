@@ -9,6 +9,9 @@ snapshots:
       unique_key: LocationID
       strategy: check
       check_cols: [Borough, Zone, service_zone]
+      # A zone that disappears from the lookup gets a closing version
+      # (dbt_is_deleted = True) instead of being left open.
+      hard_deletes: new_record
     columns:
       - name: dbt_scd_id
         data_tests: [unique, not_null]

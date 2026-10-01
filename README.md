@@ -161,7 +161,6 @@ What's left is in the adapter, plus one driver feature:
 | Doesn't work yet | Effect in dbt | Issue |
 |-|-|-|
 | Model contracts | `contract: {enforced: true}` fails with a syntax error | [#5](https://github.com/alberttwong/redis-dbt-project/issues/5) |
-| Snapshots with `hard_deletes: new_record` | Fail from the second run (`get_columns_in_relation macro not implemented`) | [#6](https://github.com/alberttwong/redis-dbt-project/issues/6) |
 | The `microbatch` incremental strategy | `not valid for this adapter` | [#7](https://github.com/alberttwong/redis-dbt-project/issues/7) |
 | `dbt.listagg(…, limit_num)`, `dbt.safe_cast` | `listagg` with a limit needs arrays, and `safe_cast` is a plain `CAST` | [#8](https://github.com/alberttwong/redis-dbt-project/issues/8) |
 | `persist_docs` | Fails the model; the driver has no `COMMENT ON` yet ([driver #72](https://github.com/alberttwong/redis-adbc-driver/issues/72)) | [#9](https://github.com/alberttwong/redis-dbt-project/issues/9) |
