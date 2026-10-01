@@ -1,0 +1,48 @@
+name: nyc_taxi
+version: "1.0.0"
+config-version: 2
+
+profile: nyc_taxi
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+analysis-paths: ["analyses"]
+
+clean-targets: ["target", "logs"]
+
+vars:
+  # The raw file and how much of it to load (see macros/load_raw_trips.sql).
+  raw_trips_path: "data/yellow_tripdata_2019-01.csv.gz"
+  raw_trips_sample_every: 50     # keep every 50th row: ~153k trips across all of January
+  raw_trips_limit: null
+  # Trip window kept by staging. Narrow trips_end to demo incremental loads.
+  trips_start: "2019-01-01 00:00:00"
+  trips_end: "2019-02-01 00:00:00"
+  # Incremental runs of fct_trips reprocess this many hours before the latest pickup.
+  lookback_hours: 6
+  # Trips with a larger total are treated as data errors and dropped in staging.
+  max_total_amount: 2000
+
+models:
+  nyc_taxi:
+    staging:
+      +schema: staging
+      +materialized: view
+    intermediate:
+      +schema: intermediate
+      +materialized: table
+    marts:
+      +schema: marts
+      +materialized: table
+
+seeds:
+  nyc_taxi:
+    +schema: seeds
+    taxi_zone_lookup:
+      +column_types:
+        LocationID: BIGINT
+        Borough: VARCHAR
+        Zone: VARCHAR
+        service_zone: VARCHAR
