@@ -32,7 +32,7 @@ make setup
 `make setup` does four things:
 
 - runs `uv sync`
-- builds the driver into `driver/`. It's pinned to driver commit `ab4468a` (v0.0.6 plus CHECK constraints, fast empty results and function checks when planning); override it with `DRIVER_VERSION`.
+- builds the driver into `driver/`. It's pinned to driver `v0.0.7`; override it with `DRIVER_VERSION`.
 - downloads the CSV into `data/`
 - starts Redis **8.6.2**, the version Redis Cloud runs, on port 6380
 
@@ -67,7 +67,9 @@ Use `make docs-serve` to browse the docs and lineage graph.
 Redis is published on **6380** so it doesn't collide with a local Redis on
 6379. Override the connection with `REDIS_URI` (for example
 `rediss://default:<pw>@host:port/0` for Redis Cloud) and the driver location
-with `REDIS_ADBC_DRIVER`.
+with `REDIS_ADBC_DRIVER`. Redis Flex (RAM + SSD) databases aren't supported:
+their Search lacks features every table needs, so the driver refuses them when
+it connects.
 
 ## dbt commands this project exercises
 
