@@ -21,10 +21,24 @@ models:
         data_tests: [non_negative]
 
   - name: dim_zones
-    description: Taxi zones with pickup/dropoff counts and pickup revenue.
+    description: >
+      Taxi zones with pickup/dropoff counts and pickup revenue. Built under an
+      enforced model contract: dbt checks the column names and types, and the
+      driver enforces the NOT NULL constraint on every write.
+    config:
+      contract: {enforced: true}
     columns:
       - name: location_id
+        data_type: bigint
+        constraints: [{type: not_null}, {type: primary_key}]
         data_tests: [unique, not_null]
+      - {name: borough, data_type: varchar}
+      - {name: zone_name, data_type: varchar}
+      - {name: service_zone, data_type: varchar}
+      - {name: is_airport, data_type: boolean}
+      - {name: pickups, data_type: bigint, constraints: [{type: not_null}]}
+      - {name: dropoffs, data_type: bigint, constraints: [{type: not_null}]}
+      - {name: pickup_revenue, data_type: double precision}
 
   - name: agg_daily_revenue
     description: >

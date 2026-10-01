@@ -20,9 +20,11 @@ from dbt_common.clients.agate_helper import table_from_rows
 from dbt_common.exceptions import DbtRuntimeError
 
 from dbt.adapters.base import BaseRelation, available
+from dbt.adapters.base.impl import ConstraintSupport
 from dbt.adapters.base.column import Column
 from dbt.adapters.base.relation import AdapterTrackingRelationInfo, InformationSchema
 from dbt.adapters.contracts.relation import Policy, RelationType
+from dbt_common.contracts.constraints import ConstraintType
 from dbt.adapters.redis_adbc.connections import RedisAdbcConnectionManager
 from dbt.adapters.sql import SQLAdapter
 
@@ -121,6 +123,17 @@ class RedisAdbcAdapter(SQLAdapter):
     ConnectionManager = RedisAdbcConnectionManager
     Relation = RedisAdbcRelation
     Column = Column
+
+    # Model contract constraints: the driver checks NOT NULL on every write,
+    # accepts PRIMARY KEY / UNIQUE without enforcing them, and doesn't parse
+    # column-level CHECK or REFERENCES (dbt then warns and leaves them out).
+    CONSTRAINT_SUPPORT = {
+        ConstraintType.not_null: ConstraintSupport.ENFORCED,
+        ConstraintType.primary_key: ConstraintSupport.NOT_ENFORCED,
+        ConstraintType.unique: ConstraintSupport.NOT_ENFORCED,
+        ConstraintType.check: ConstraintSupport.NOT_SUPPORTED,
+        ConstraintType.foreign_key: ConstraintSupport.NOT_SUPPORTED,
+    }
 
     @classmethod
     def get_adapter_run_info(cls, config) -> AdapterTrackingRelationInfo:
