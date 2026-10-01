@@ -44,3 +44,8 @@
 {% macro redis_adbc__snapshot_get_time() -%}
   localtimestamp
 {%- endmacro %}
+
+{#- dbt calls the adapter method; packages and user code call the macro. -#}
+{% macro redis_adbc__list_relations_without_caching(schema_relation) -%}
+  {{ return(adapter.list_relations_table(schema_relation)) }}
+{%- endmacro %}

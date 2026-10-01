@@ -137,7 +137,7 @@ materializations, so the adapter covers what isn't SQL:
 | Area | Adapter |
 |-|-|
 | Connection | `adbc_driver_manager` DB-API, autocommit (the driver has no transactions, so `BEGIN`/`COMMIT` are no-ops) |
-| Metadata | Relations, columns and the docs catalog come from ADBC `GetObjects`; table comments come from `information_schema.tables` |
+| Metadata | Relations, columns and the docs catalog come from ADBC `GetObjects`; table comments come from `information_schema.tables`. Relations are matched with their case, since the driver keeps schema and table names as written (`alias='MyTable'` works). Column types are parsed as dbt-postgres reports them (`numeric` with precision and scale, `character varying` with its length) |
 | `persist_docs` | Descriptions are stored with `COMMENT ON TABLE` / `VIEW` / `COLUMN`; the marts turn it on |
 | `grants` | Skipped with a warning (see [Known limitations](#known-limitations)) |
 | Temporary tables | `make_temp_relation` renders them unqualified (a schema-qualified name always means a permanent table), and their columns are looked up under `pg_temp` |
@@ -196,7 +196,9 @@ the dbt features above all work. Three limits come from the design:
   the middle of a materialization can leave a `__dbt_tmp` or `__dbt_backup`
   relation behind. dbt drops those at the start of the next run of that
   model.
-- **SQL models only.** dbt Python models aren't supported.
+- **SQL models only.** dbt Python models aren't supported, and neither are
+  materialized views (`materialized='materialized_view'` stops with a clear
+  error).
 - **No grants.** Redis controls access per user with ACLs (key patterns and
   commands), not SQL privileges on tables, so a `grants` config is skipped
   with a warning.

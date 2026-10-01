@@ -47,3 +47,9 @@
     select {{ cols }} from {{ source }}
   )
 {% endmacro %}
+
+{#- Redis has no materialized views; say so instead of dbt's "not implemented"
+    errors (or, for a table switched to materialized_view, a rename error). -#}
+{% materialization materialized_view, adapter='redis_adbc' %}
+  {{ exceptions.raise_compiler_error("materialized views aren't supported on Redis (" ~ this ~ "); use materialized='table' or 'incremental'") }}
+{% endmaterialization %}
