@@ -22,8 +22,9 @@ dbt  ──►  dbt-redis-adbc (adapter/)  ──►  adbc_driver_manager  ─�
 
 ## Quick start
 
-Requirements: Docker, [uv](https://docs.astral.sh/uv/) (it provides Python
-3.10–3.13 for dbt), Go 1.26+ and a C toolchain (to build the driver).
+Requirements: Docker and [uv](https://docs.astral.sh/uv/) (it provides Python
+3.10–3.13 for dbt). Building the driver from source also needs Go 1.26+ and a
+C toolchain; on macOS arm64 and Linux (x86-64, arm64) the prebuilt one is used.
 
 ```bash
 make setup
@@ -32,7 +33,11 @@ make setup
 `make setup` does four things:
 
 - runs `uv sync`
-- builds the driver into `driver/`. It's pinned to driver `v0.0.7`; override it with `DRIVER_VERSION`.
+- puts the driver in `driver/`: the prebuilt library from the pinned
+  release (`v0.0.7`, in `scripts/driver-version`), after checking its SHA-256.
+  Where the release has no build (another platform, or `DRIVER_VERSION` set
+  to a commit) it builds the driver from source instead; `make driver-build`
+  always does
 - downloads the CSV into `data/`
 - starts Redis **8.6.2**, the version Redis Cloud runs, on port 6380
 
@@ -107,7 +112,7 @@ tests/            generic (non_negative, in_range) and singular tests, including
                   cross-database macros
 analyses/         top_pickup_zones_by_day_part
 adapter/          the dbt-redis-adbc adapter package (installed editable by uv)
-scripts/          build_driver.sh, download_data.sh
+scripts/          download_driver.sh, build_driver.sh, driver-version, download_data.sh
 ```
 
 Useful vars (defaults are in `dbt_project.yml`):
