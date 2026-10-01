@@ -32,7 +32,7 @@ make setup
 `make setup` does four things:
 
 - runs `uv sync`
-- builds the driver into `driver/`. It's pinned to driver commit `afc7568` (v0.0.6 plus CHECK constraints and fast empty results); override it with `DRIVER_VERSION`.
+- builds the driver into `driver/`. It's pinned to driver commit `ab4468a` (v0.0.6 plus CHECK constraints, fast empty results and function checks when planning); override it with `DRIVER_VERSION`.
 - downloads the CSV into `data/`
 - starts Redis **8.6.2**, the version Redis Cloud runs, on port 6380
 
@@ -149,7 +149,7 @@ Profile options (`profiles.yml`): `driver`, `uri`, `username`, `password`,
 
 Building this project turned up these issues, all filed on
 [alberttwong/redis-adbc-driver](https://github.com/alberttwong/redis-adbc-driver/issues).
-All but one are fixed on the pinned driver.
+All of them are fixed on the pinned driver.
 
 | Issue | Fixed in |
 |-|-|
@@ -177,19 +177,12 @@ All but one are fixed on the pinned driver.
 | [#72](https://github.com/alberttwong/redis-adbc-driver/issues/72) `COMMENT ON` (dbt's `persist_docs`) | [#73](https://github.com/alberttwong/redis-adbc-driver/pull/73) |
 | [#75](https://github.com/alberttwong/redis-adbc-driver/issues/75) Column-level `CHECK` / `REFERENCES` didn't parse; `CHECK` wasn't enforced | [#76](https://github.com/alberttwong/redis-adbc-driver/pull/76) |
 | [#74](https://github.com/alberttwong/redis-adbc-driver/issues/74) `WHERE false` / `LIMIT 0` ran the whole query (dbt's contract checks, `--empty`: 5 s → 2 ms on `dim_zones`) | [#77](https://github.com/alberttwong/redis-adbc-driver/pull/77) |
-| [#78](https://github.com/alberttwong/redis-adbc-driver/issues/78) Unknown functions are only caught when a row is evaluated | Open |
+| [#78](https://github.com/alberttwong/redis-adbc-driver/issues/78) Unknown functions were only caught when a row was evaluated, so they passed contract checks and `--empty` | [#79](https://github.com/alberttwong/redis-adbc-driver/pull/79) |
 
 ## Known limitations
 
 The driver runs the SQL that dbt and its cross-database macros generate, and
-the dbt features above all work, with one caveat from an open driver issue:
-
-- **Unknown functions are found late.** The driver checks a function's name
-  when it evaluates a row. A misspelled function therefore passes dbt's
-  contract check and `--empty`, which read no rows, and fails when the model
-  is built ([driver #78](https://github.com/alberttwong/redis-adbc-driver/issues/78)).
-
-Three limits come from the design:
+the dbt features above all work. Three limits come from the design:
 
 - **No transactions.** Every statement autocommits, so a run that stops in
   the middle of a materialization can leave a `__dbt_tmp` or `__dbt_backup`
