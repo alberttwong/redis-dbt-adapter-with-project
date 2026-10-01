@@ -32,7 +32,7 @@ make setup
 `make setup` does four things:
 
 - runs `uv sync`
-- builds the driver into `driver/`. It's pinned to driver commit `e1dd2ce` (v0.0.6 plus CHECK constraints); override it with `DRIVER_VERSION`.
+- builds the driver into `driver/`. It's pinned to driver commit `afc7568` (v0.0.6 plus CHECK constraints and fast empty results); override it with `DRIVER_VERSION`.
 - downloads the CSV into `data/`
 - starts Redis **8.6.2**, the version Redis Cloud runs, on port 6380
 
@@ -81,6 +81,7 @@ with `REDIS_ADBC_DRIVER`.
 | `dbt snapshot` | `zones_snapshot`: SCD type 2 history of the zone lookup (check strategy; a deleted zone gets a closing version), written by dbt's snapshot `MERGE` |
 | `dbt test` / `dbt build` | 49 data tests (`unique`, `not_null`, `accepted_values`, `relationships`, custom generic `non_negative` / `in_range`, 3 singular tests) and 2 unit tests |
 | `dbt show`, `dbt compile`, `dbt ls` | Previews, inline queries, and the analysis in `analyses/` |
+| `dbt build --empty --exclude-resource-type snapshot` | Builds and tests every model with no rows, in about 6 s. dbt reads each ref and source as `(select * from … where false limit 0)`, which the driver answers without reading the table. Tables and seeds are left empty (incremental models keep their rows), so run `make all` afterwards. Leave out the snapshot: with an empty source, `hard_deletes: new_record` would record every zone as deleted |
 | `dbt docs generate` | Catalog built from ADBC `GetObjects` (column types, tables vs views), with the comments the marts store through `persist_docs` |
 
 A clean `make all` takes about 80 s on a laptop. It ends with 69 passes and 1
@@ -175,18 +176,18 @@ All but one are fixed on the pinned driver.
 | [#54](https://github.com/alberttwong/redis-adbc-driver/issues/54) Renamed tables keep their old key prefix (opt-in fix: `rename_rekey`) | [#69](https://github.com/alberttwong/redis-adbc-driver/pull/69) |
 | [#72](https://github.com/alberttwong/redis-adbc-driver/issues/72) `COMMENT ON` (dbt's `persist_docs`) | [#73](https://github.com/alberttwong/redis-adbc-driver/pull/73) |
 | [#75](https://github.com/alberttwong/redis-adbc-driver/issues/75) Column-level `CHECK` / `REFERENCES` didn't parse; `CHECK` wasn't enforced | [#76](https://github.com/alberttwong/redis-adbc-driver/pull/76) |
-| [#74](https://github.com/alberttwong/redis-adbc-driver/issues/74) `WHERE false` / `LIMIT 0` still run the whole query | Open |
+| [#74](https://github.com/alberttwong/redis-adbc-driver/issues/74) `WHERE false` / `LIMIT 0` ran the whole query (dbt's contract checks, `--empty`: 5 s → 2 ms on `dim_zones`) | [#77](https://github.com/alberttwong/redis-adbc-driver/pull/77) |
+| [#78](https://github.com/alberttwong/redis-adbc-driver/issues/78) Unknown functions are only caught when a row is evaluated | Open |
 
 ## Known limitations
 
 The driver runs the SQL that dbt and its cross-database macros generate, and
 the dbt features above all work, with one caveat from an open driver issue:
 
-- **Getting a query's columns runs the query.** dbt finds them with
-  `select * from (…) where false limit 0`: for an enforced contract, for a
-  snapshot's source, and for every `ref` under `--empty`. The driver runs the
-  whole inner query, so `dim_zones`' contract check takes as long as building
-  it ([driver #74](https://github.com/alberttwong/redis-adbc-driver/issues/74)).
+- **Unknown functions are found late.** The driver checks a function's name
+  when it evaluates a row. A misspelled function therefore passes dbt's
+  contract check and `--empty`, which read no rows, and fails when the model
+  is built ([driver #78](https://github.com/alberttwong/redis-adbc-driver/issues/78)).
 
 Three limits come from the design:
 
