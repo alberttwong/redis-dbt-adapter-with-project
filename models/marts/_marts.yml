@@ -1,0 +1,54 @@
+version: 2
+
+models:
+  - name: fct_trips
+    description: >
+      One row per trip. Incremental: each run inserts trips picked up after the
+      latest pickup already in the table (delete+insert on trip_id).
+    columns:
+      - name: trip_id
+        data_tests: [unique, not_null]
+      - name: pickup_location_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_zones')
+                field: location_id
+      - name: fare_amount
+        data_tests: [non_negative]
+      - name: trip_distance
+        data_tests: [non_negative]
+
+  - name: dim_zones
+    description: Taxi zones with pickup/dropoff counts and pickup revenue.
+    columns:
+      - name: location_id
+        data_tests: [unique, not_null]
+
+  - name: agg_daily_revenue
+    description: Trips, passengers, miles and revenue per pickup date.
+    columns:
+      - name: pickup_date
+        data_tests: [unique, not_null]
+      - name: trips
+        data_tests:
+          - in_range:
+              arguments: {min_value: 1, max_value: 1000000}
+
+  - name: agg_hourly_demand
+    description: Demand by hour of day (built from CAST(ts AS TIME) since the driver has no EXTRACT).
+    columns:
+      - name: pickup_hour
+        data_tests: [unique, not_null]
+
+  - name: agg_borough_flows
+    description: Trips between boroughs with at least 25 trips (GROUP BY ... HAVING).
+
+  - name: agg_payment_mix
+    description: Share of trips and tips by payment type (scalar subquery for the total).
+    columns:
+      - name: payment_type_id
+        data_tests: [unique]
+
+  - name: agg_airport_trips
+    description: Trips to and from JFK, LaGuardia and Newark.

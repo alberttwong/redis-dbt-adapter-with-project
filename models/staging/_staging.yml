@@ -1,0 +1,70 @@
+version: 2
+
+models:
+  - name: stg_yellow_trips
+    description: >
+      Valid yellow taxi trips in the configured window, renamed and typed.
+    columns:
+      - name: trip_id
+        data_tests: [unique, not_null]
+      - name: pickup_datetime
+        data_tests: [not_null]
+      - name: pickup_hour
+        data_tests:
+          - in_range:
+              arguments: {min_value: 0, max_value: 23}
+      - name: pickup_day_part
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["overnight", "morning rush", "midday", "evening rush", "night"]
+      - name: payment_type_id
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4, 5, 6]
+                quote: false
+          - relationships:
+              arguments:
+                to: ref('stg_payment_types')
+                field: payment_type_id
+      - name: pickup_location_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('stg_taxi_zones')
+                field: location_id
+      - name: dropoff_location_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('stg_taxi_zones')
+                field: location_id
+      - name: total_amount
+        data_tests: [non_negative]
+
+  - name: stg_taxi_zones
+    description: TLC taxi zones (from the taxi_zone_lookup seed).
+    columns:
+      - name: location_id
+        data_tests: [unique, not_null]
+      - name: borough
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["Bronx", "Brooklyn", "EWR", "Manhattan", "Queens", "Staten Island", "Unknown", "N/A"]
+
+  - name: stg_payment_types
+    columns:
+      - name: payment_type_id
+        data_tests: [unique, not_null]
+
+  - name: stg_rate_codes
+    columns:
+      - name: rate_code_id
+        data_tests: [unique, not_null]
+
+  - name: stg_vendors
+    columns:
+      - name: vendor_id
+        data_tests: [unique, not_null]

@@ -1,0 +1,36 @@
+version: 2
+
+sources:
+  - name: nyc_tlc
+    description: >
+      NYC Taxi & Limousine Commission trip records, loaded from CSV into Redis
+      with `dbt run-operation load_raw_trips` (ADBC bulk ingest).
+    database: redis
+    schema: raw
+    tables:
+      - name: yellow_tripdata
+        description: Yellow taxi trips, January 2019 (sampled), one Redis HASH per row.
+        columns:
+          - name: trip_id
+            description: Row number of the trip in the source CSV (added by the loader).
+            data_tests: [unique, not_null]
+          - name: VendorID
+            description: TPEP provider (1 = Creative Mobile Technologies, 2 = VeriFone).
+          - name: tpep_pickup_datetime
+            data_tests: [not_null]
+          - name: tpep_dropoff_datetime
+            data_tests: [not_null]
+          - name: PULocationID
+            description: TLC taxi zone where the meter was engaged.
+          - name: DOLocationID
+            description: TLC taxi zone where the meter was disengaged.
+          - name: payment_type
+          - name: total_amount
+            description: Total charged to the passenger. The raw file has known garbage values.
+            data_tests:
+              - in_range:
+                  arguments:
+                    min_value: -1000
+                    max_value: "{{ var('max_total_amount') }}"
+                  config:
+                    severity: warn

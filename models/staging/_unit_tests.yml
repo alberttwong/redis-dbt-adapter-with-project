@@ -1,0 +1,36 @@
+version: 2
+
+unit_tests:
+  - name: stg_yellow_trips_derives_time_fields_and_filters_bad_trips
+    description: >
+      Hour, ISO weekday, day part and duration are derived from the pickup and
+      dropoff timestamps; trips with no duration, a 12h+ meter, or a garbage
+      total are dropped.
+    model: stg_yellow_trips
+    given:
+      - input: source('nyc_tlc', 'yellow_tripdata')
+        rows:
+          # 2019-01-07 is a Monday (isodow 1).
+          - {trip_id: 1, VendorID: 1, tpep_pickup_datetime: "2019-01-07 08:15:00", tpep_dropoff_datetime: "2019-01-07 08:45:30", trip_distance: 3.0, total_amount: 20.0, store_and_fwd_flag: "N"}
+          - {trip_id: 2, VendorID: 2, tpep_pickup_datetime: "2019-01-12 23:50:00", tpep_dropoff_datetime: "2019-01-13 00:05:00", trip_distance: 4.0, total_amount: 25.0, store_and_fwd_flag: "Y"}
+          - {trip_id: 3, VendorID: 1, tpep_pickup_datetime: "2019-01-08 12:00:00", tpep_dropoff_datetime: "2019-01-08 12:00:00", trip_distance: 0.0, total_amount: 5.0}
+          - {trip_id: 4, VendorID: 1, tpep_pickup_datetime: "2019-01-08 01:00:00", tpep_dropoff_datetime: "2019-01-08 14:00:00", trip_distance: 9.0, total_amount: 50.0}
+          - {trip_id: 5, VendorID: 2, tpep_pickup_datetime: "2019-01-09 10:00:00", tpep_dropoff_datetime: "2019-01-09 10:10:00", trip_distance: 2.4, total_amount: 623261.66}
+    expect:
+      rows:
+        - {trip_id: 1, vendor_id: 1, pickup_hour: 8, pickup_iso_weekday: 1, pickup_day_part: "morning rush", trip_duration_minutes: 30.50, is_store_and_forward: false}
+        - {trip_id: 2, vendor_id: 2, pickup_hour: 23, pickup_iso_weekday: 6, pickup_day_part: "night", trip_duration_minutes: 15.00, is_store_and_forward: true}
+
+  - name: stg_taxi_zones_flags_airports
+    model: stg_taxi_zones
+    given:
+      - input: ref('taxi_zone_lookup')
+        rows:
+          - {LocationID: 1, Borough: "EWR", Zone: "Newark Airport", service_zone: "EWR"}
+          - {LocationID: 132, Borough: "Queens", Zone: "JFK Airport", service_zone: "Airports"}
+          - {LocationID: 161, Borough: "Manhattan", Zone: "Midtown Center", service_zone: "Yellow Zone"}
+    expect:
+      rows:
+        - {location_id: 1, is_airport: true}
+        - {location_id: 132, is_airport: true}
+        - {location_id: 161, is_airport: false}

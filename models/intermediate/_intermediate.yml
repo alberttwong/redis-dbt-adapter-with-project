@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: int_trips_enriched
+    description: Trips joined to pickup/dropoff zones, payment types, rate codes and vendors.
+    columns:
+      - name: trip_id
+        data_tests: [unique, not_null]
+      - name: pickup_borough
+        data_tests: [not_null]
+      - name: dropoff_borough
+        data_tests: [not_null]
+      - name: tip_pct
+        description: Tip as a percentage of the fare, card payments only (cash tips aren't recorded).
