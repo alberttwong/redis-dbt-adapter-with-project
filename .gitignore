@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.egg-info/
+target/
+dbt_packages/
+logs/
+.user.yml
+data/
+driver/
+build/
