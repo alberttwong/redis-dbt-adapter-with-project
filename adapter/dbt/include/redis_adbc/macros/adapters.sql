@@ -32,3 +32,15 @@
 {% macro redis_adbc__current_timestamp() -%}
   current_timestamp
 {%- endmacro %}
+
+{#- Some of dbt's macros (snapshots with hard_deletes: new_record) call the
+    get_columns_in_relation macro rather than the adapter method. -#}
+{% macro redis_adbc__get_columns_in_relation(relation) -%}
+  {{ return(adapter.get_columns_in_relation(relation)) }}
+{%- endmacro %}
+
+{#- Snapshot validity timestamps without a time zone (UTC), as on Postgres,
+    so they compare with the usual TIMESTAMP updated_at columns. -#}
+{% macro redis_adbc__snapshot_get_time() -%}
+  localtimestamp
+{%- endmacro %}
