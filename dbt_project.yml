@@ -26,6 +26,8 @@ vars:
   top_zones_per_borough: 3
   # Trips with a larger total are treated as data errors and dropped in staging.
   max_total_amount: 2000
+  # Enables the optional microbatch model fct_trips_microbatch (make microbatch-demo).
+  microbatch_demo: false
 
 models:
   nyc_taxi:

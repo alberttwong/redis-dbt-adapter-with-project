@@ -1,13 +1,15 @@
 # dbt on Redis: NYC taxi trips
 
-A dbt Core project that tests the DBT Redis adapter which is built on the
+A dbt Core project that tests the dbt Redis adapter, which is built on the
 [Redis ADBC driver](https://github.com/alberttwong/redis-adbc-driver). It does
 three things:
 
 - loads the NYC TLC yellow-taxi trips CSV into Redis,
 - transforms it with ordinary dbt SQL: views, tables, an incremental MERGE
-  fact table, a snapshot, joins, window functions, CTEs and `QUALIFY`,
-- tests and documents it with dbt's standard commands.
+  fact table, a microbatch model, a snapshot, a model contract, joins, window
+  functions, CTEs and `QUALIFY`,
+- tests and documents it with dbt's standard commands, and stores the model
+  descriptions in Redis as comments.
 
 dbt's own default materializations do the work: tables, views, incremental
 models (temporary tables plus `MERGE` or delete+insert) and snapshots. The SQL
@@ -39,15 +41,22 @@ make all
 ```
 
 `make all` runs `dbt debug`, `seed`, `run-operation load_raw_trips`, `build`
-and `docs generate`. To try the incremental model and the snapshot:
+and `docs generate`. Three demos show what happens across runs.
+
+Load the first half of January, then merge in the rest:
 
 ```bash
 make incremental-demo
 ```
 
+Rename a zone between two snapshots; its history keeps both versions:
+
 ```bash
 make snapshot-demo
 ```
+
+Backfill January 1–3 as three daily batches (run in parallel), then re-run
+January 2 alone, which replaces only that day:
 
 ```bash
 make microbatch-demo
@@ -67,8 +76,9 @@ with `REDIS_ADBC_DRIVER`.
 | `dbt debug` | Opens an ADBC connection; the driver checks that the Query Engine is available (`FT._LIST`) |
 | `dbt seed` | 4 lookup CSVs (zones, payment types, rate codes, vendors), loaded with ADBC bulk ingest; reloads use `TRUNCATE` |
 | `dbt run-operation load_raw_trips` | Streams the 134 MB gzipped CSV with pyarrow, keeps every 50th row (~153k trips across January), adds `trip_id` (the trip's row number in the file), and bulk-ingests it into `raw.yellow_tripdata` in about 6 s |
-| `dbt run` | 5 views and 8 tables, rebuilt with dbt's create-then-`ALTER … RENAME` swap; plus 1 incremental model, built by `CREATE TEMPORARY TABLE` then `MERGE` |
-| `dbt snapshot` | `zones_snapshot`: SCD type 2 history of the zone lookup (check strategy), written by dbt's snapshot `MERGE` |
+| `dbt run` | 5 views and 8 tables, rebuilt with dbt's create-then-`ALTER … RENAME` swap; plus 1 incremental model, built by `CREATE TEMPORARY TABLE` then `MERGE`. `dim_zones` has an enforced contract, so it's created from its DDL and then filled with `INSERT`. The marts' descriptions are stored with `COMMENT ON` |
+| `dbt run --event-time-start … --event-time-end …` | `fct_trips_microbatch` (off unless `microbatch_demo` is set): one batch per pickup day; each batch deletes its day, then inserts it |
+| `dbt snapshot` | `zones_snapshot`: SCD type 2 history of the zone lookup (check strategy; a deleted zone gets a closing version), written by dbt's snapshot `MERGE` |
 | `dbt test` / `dbt build` | 49 data tests (`unique`, `not_null`, `accepted_values`, `relationships`, custom generic `non_negative` / `in_range`, 3 singular tests) and 2 unit tests |
 | `dbt show`, `dbt compile`, `dbt ls` | Previews, inline queries, and the analysis in `analyses/` |
 | `dbt docs generate` | Catalog built from ADBC `GetObjects` (column types, tables vs views), with the comments the marts store through `persist_docs` |
@@ -83,13 +93,15 @@ data, which staging filters out.
 models/
   staging/        views over raw + seeds: rename, type, filter, derive hour/weekday/duration
   intermediate/   int_trips_enriched: trips ⋈ zones (×2) ⋈ payment types ⋈ rate codes ⋈ vendors
-  marts/          fct_trips (incremental MERGE), dim_zones, agg_daily_revenue (7-day rolling
-                  average, LAG, RANK), agg_top_pickup_zones (RANK … QUALIFY), agg_hourly_demand,
-                  agg_borough_flows, agg_payment_mix, agg_airport_trips
+  marts/          fct_trips (incremental MERGE), fct_trips_microbatch (optional), dim_zones
+                  (enforced contract), agg_daily_revenue (7-day rolling average, LAG, RANK),
+                  agg_top_pickup_zones (RANK … QUALIFY), agg_hourly_demand, agg_borough_flows,
+                  agg_payment_mix, agg_airport_trips
 snapshots/        zones_snapshot (SCD type 2 of the zone lookup)
 seeds/            taxi_zone_lookup, payment_types, rate_codes, vendors
 macros/           load_raw_trips and rename_zone (run-operations), day_part
-tests/            generic (non_negative, in_range) and singular tests
+tests/            generic (non_negative, in_range) and singular tests, including dbt's
+                  cross-database macros
 analyses/         top_pickup_zones_by_day_part
 adapter/          the dbt-redis-adbc adapter package (installed editable by uv)
 scripts/          build_driver.sh, download_data.sh
@@ -105,6 +117,7 @@ Useful vars (defaults are in `dbt_project.yml`):
 | `max_total_amount` | `2000` | Larger totals are treated as data errors |
 | `lookback_hours` | `6` | Hours before the latest loaded pickup that each incremental run re-merges |
 | `top_zones_per_borough` | `3` | Zones kept per borough by `agg_top_pickup_zones` |
+| `microbatch_demo` | `false` | Enables `fct_trips_microbatch` |
 
 ## What the adapter does
 
@@ -123,7 +136,7 @@ materializations, so the adapter covers what isn't SQL:
 | Incremental strategies | `append`, `delete+insert` (the default with a `unique_key`), `merge`, and `microbatch` (each batch replaces its `event_time` window; batches can run in parallel) |
 | Loading | Seeds and the raw CSV go through Arrow bulk ingest, which is much faster than INSERTs |
 | Cross-database macros | dbt-core's defaults work natively except two: `safe_cast` uses the driver's `TRY_CAST`, and `listagg` with `limit_num` raises a clear error (it needs arrays). `tests/assert_cross_db_macros.sql` checks them all |
-| Model contracts | An enforced contract creates the table from its DDL, then inserts the rows (as on dbt-postgres). `not_null` is enforced by the driver; `primary_key` and `unique` are accepted but not enforced; `check` and `foreign_key` are skipped with a warning |
+| Model contracts | An enforced contract creates the table from its DDL, then inserts the rows (as on dbt-postgres). `not_null` is enforced by the driver; `primary_key` and `unique` are accepted but not enforced; `check` and `foreign_key` are skipped with a warning until the driver parses them inline ([driver #75](https://github.com/alberttwong/redis-adbc-driver/issues/75)) |
 | Small dialect bits | `?` bind parameters, `CURRENT_TIMESTAMP`, and a subquery wrapper for `dbt show --limit` |
 
 Profile options (`profiles.yml`): `driver`, `uri`, `username`, `password`,
@@ -135,7 +148,7 @@ Profile options (`profiles.yml`): `driver`, `uri`, `username`, `password`,
 
 Building this project turned up these issues, all filed on
 [alberttwong/redis-adbc-driver](https://github.com/alberttwong/redis-adbc-driver/issues).
-All of them are fixed on the pinned driver.
+All but the last two are fixed on the pinned driver.
 
 | Issue | Fixed in |
 |-|-|
@@ -161,11 +174,24 @@ All of them are fixed on the pinned driver.
 | [#53](https://github.com/alberttwong/redis-adbc-driver/issues/53) JSON functions | [#64](https://github.com/alberttwong/redis-adbc-driver/pull/64) |
 | [#54](https://github.com/alberttwong/redis-adbc-driver/issues/54) Renamed tables keep their old key prefix (opt-in fix: `rename_rekey`) | [#69](https://github.com/alberttwong/redis-adbc-driver/pull/69) |
 | [#72](https://github.com/alberttwong/redis-adbc-driver/issues/72) `COMMENT ON` (dbt's `persist_docs`) | [#73](https://github.com/alberttwong/redis-adbc-driver/pull/73) |
+| [#74](https://github.com/alberttwong/redis-adbc-driver/issues/74) `WHERE false` / `LIMIT 0` still run the whole query | Open |
+| [#75](https://github.com/alberttwong/redis-adbc-driver/issues/75) Column-level `CHECK` / `REFERENCES` don't parse; constraints aren't enforced | Open |
 
 ## Known limitations
 
 The driver runs the SQL that dbt and its cross-database macros generate, and
-the dbt features above all work. Three limits come from the design:
+the dbt features above all work, with two caveats from open driver issues:
+
+- **Getting a query's columns runs the query.** dbt finds them with
+  `select * from (…) where false limit 0`: for an enforced contract, for a
+  snapshot's source, and for every `ref` under `--empty`. The driver runs the
+  whole inner query, so `dim_zones`' contract check takes as long as building
+  it ([driver #74](https://github.com/alberttwong/redis-adbc-driver/issues/74)).
+- **Contract `check` and `foreign_key` constraints are dropped** with a
+  warning, because the driver doesn't parse them inline
+  ([driver #75](https://github.com/alberttwong/redis-adbc-driver/issues/75)).
+
+Three limits come from the design:
 
 - **No transactions.** Every statement autocommits, so a run that stops in
   the middle of a materialization can leave a `__dbt_tmp` or `__dbt_backup`
@@ -198,6 +224,13 @@ Either way, a table's current prefix and index are in its metadata:
 
 ```bash
 docker exec redis-dbt-taxi redis-cli GET 'adbc:{meta}:table:taxi_marts:agg_daily_revenue'
+```
+
+The metadata also holds the comments `persist_docs` writes. They're easier to
+read through `information_schema`:
+
+```bash
+uv run dbt show --inline "select table_name, comment from information_schema.tables where table_schema = 'taxi_marts'"
 ```
 
 To watch the `FT.AGGREGATE` / `HMGET` traffic while dbt runs:
