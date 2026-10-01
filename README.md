@@ -30,7 +30,7 @@ make setup
 `make setup` does four things:
 
 - runs `uv sync`
-- builds the driver into `driver/`. It's pinned to driver commit `b905827`; override it with `DRIVER_VERSION`.
+- builds the driver into `driver/`. It's pinned to driver commit `f2b45ab`; override it with `DRIVER_VERSION`.
 - downloads the CSV into `data/`
 - starts Redis **8.6.2**, the version Redis Cloud runs, on port 6380
 
@@ -119,15 +119,15 @@ materializations, so the adapter covers what isn't SQL:
 | Small dialect bits | `?` bind parameters, `CURRENT_TIMESTAMP`, and a subquery wrapper for `dbt show --limit` |
 
 Profile options (`profiles.yml`): `driver`, `uri`, `username`, `password`,
-`database` (always `redis`), `schema`, `threads`, and `aggregate_pushdown`
-(`exact` / `all` / `none`).
+`database` (always `redis`), `schema`, `threads`, `aggregate_pushdown`
+(`exact` / `all` / `none`), and `rename_rekey` (see
+[Looking at the data in Redis](#looking-at-the-data-in-redis)).
 
 ## Driver issues found along the way
 
 Building this project turned up these issues, all filed on
 [alberttwong/redis-adbc-driver](https://github.com/alberttwong/redis-adbc-driver/issues).
-All of them are fixed on the pinned driver; the ones still open are under
-[Known limitations](#known-limitations).
+All of them are fixed on the pinned driver.
 
 | Issue | Fixed in |
 |-|-|
@@ -143,26 +143,30 @@ All of them are fixed on the pinned driver; the ones still open are under
 | [#33](https://github.com/alberttwong/redis-adbc-driver/issues/33) `CONCAT` returned NULL for any NULL argument | [#34](https://github.com/alberttwong/redis-adbc-driver/pull/34) |
 | [#36](https://github.com/alberttwong/redis-adbc-driver/issues/36) Wrong results: rounded constants pushed into the index (`int_col > 1.5`) | [#40](https://github.com/alberttwong/redis-adbc-driver/pull/40) |
 | [#37](https://github.com/alberttwong/redis-adbc-driver/issues/37) Slow literal `IN` lists over 1,000 values (66 s → 1 s) | [#41](https://github.com/alberttwong/redis-adbc-driver/pull/41) |
+| [#43](https://github.com/alberttwong/redis-adbc-driver/issues/43) Column `DEFAULT`s accepted but never applied | [#57](https://github.com/alberttwong/redis-adbc-driver/pull/57) |
+| [#44](https://github.com/alberttwong/redis-adbc-driver/issues/44), [#45](https://github.com/alberttwong/redis-adbc-driver/issues/45), [#50](https://github.com/alberttwong/redis-adbc-driver/issues/50) `TRY_CAST`, `%` on NUMERIC, `DATEADD` / `DATEDIFF` (dbt's `dateadd`, `datediff`, `last_day`, `date_spine`) | [#56](https://github.com/alberttwong/redis-adbc-driver/pull/56) |
+| [#46](https://github.com/alberttwong/redis-adbc-driver/issues/46), [#47](https://github.com/alberttwong/redis-adbc-driver/issues/47) `STRING_AGG`, `BOOL_OR`, `ANY_VALUE`, statistics and percentiles; `FILTER`, `IGNORE NULLS`, frame `EXCLUDE` (dbt's `listagg`, `bool_or`, `any_value`) | [#62](https://github.com/alberttwong/redis-adbc-driver/pull/62) |
+| [#48](https://github.com/alberttwong/redis-adbc-driver/issues/48) `GROUPING SETS`, `ROLLUP`, `CUBE` | [#59](https://github.com/alberttwong/redis-adbc-driver/pull/59) |
+| [#49](https://github.com/alberttwong/redis-adbc-driver/issues/49) Regular expressions | [#61](https://github.com/alberttwong/redis-adbc-driver/pull/61) |
+| [#51](https://github.com/alberttwong/redis-adbc-driver/issues/51) `RETURNING`, `UPDATE … SET (a, b) = (…)` | [#58](https://github.com/alberttwong/redis-adbc-driver/pull/58) |
+| [#52](https://github.com/alberttwong/redis-adbc-driver/issues/52) `WITH RECURSIVE`, `LATERAL`, `ANY` / `ALL`, `NATURAL JOIN`, `GENERATE_SERIES` | [#68](https://github.com/alberttwong/redis-adbc-driver/pull/68) |
+| [#53](https://github.com/alberttwong/redis-adbc-driver/issues/53) JSON functions | [#64](https://github.com/alberttwong/redis-adbc-driver/pull/64) |
+| [#54](https://github.com/alberttwong/redis-adbc-driver/issues/54) Renamed tables keep their old key prefix (opt-in fix: `rename_rekey`) | [#69](https://github.com/alberttwong/redis-adbc-driver/pull/69) |
 
 ## Known limitations
 
-These work on most dbt warehouses but not here yet. Each is tracked by an
-open driver issue.
+The driver now runs the SQL that dbt and its cross-database macros generate.
+What's left is in the adapter, plus one driver feature:
 
-| Doesn't work yet | Effect in dbt | Driver issue |
+| Doesn't work yet | Effect in dbt | Issue |
 |-|-|-|
-| `DATEADD(day, …)` / `DATEDIFF(day, …)` with a bare date part | `dbt.dateadd`, `dbt.datediff`, `dbt.last_day` and `dbt.date_spine` fail (`column "day" does not exist`). Write `x + interval '1 day'` and `date_diff('day', a, b)` instead | [#50](https://github.com/alberttwong/redis-adbc-driver/issues/50) |
-| `STRING_AGG` / `LISTAGG`, `BOOL_OR` / `BOOL_AND`, `ANY_VALUE`, `STDDEV` / `VARIANCE`, `PERCENTILE_CONT`, `COUNT(DISTINCT a, b)` | `dbt.listagg`, `dbt.bool_or` and `dbt.any_value` fail, and so do statistics in marts and packages | [#46](https://github.com/alberttwong/redis-adbc-driver/issues/46) |
-| `agg(…) FILTER (WHERE …)`, window `IGNORE NULLS`, frame `EXCLUDE` | Use `SUM(CASE WHEN …)` pivots instead | [#47](https://github.com/alberttwong/redis-adbc-driver/issues/47) |
-| `GROUPING SETS` / `ROLLUP` / `CUBE` | Write subtotals as one `UNION ALL` branch per level | [#48](https://github.com/alberttwong/redis-adbc-driver/issues/48) |
-| Regex matching (`~`, `SIMILAR TO`, `REGEXP_LIKE`, …) | Only `LIKE` / `ILIKE` and `REGEXP_REPLACE` are available | [#49](https://github.com/alberttwong/redis-adbc-driver/issues/49) |
-| `RETURNING`, `UPDATE … SET (a, b) = (…)` | Not used by dbt's materializations | [#51](https://github.com/alberttwong/redis-adbc-driver/issues/51) |
-| `WITH RECURSIVE`, `LATERAL`, `ANY` / `ALL`, `NATURAL JOIN`, `GENERATE_SERIES` | Hierarchy models and `generate_series` date spines need rewriting | [#52](https://github.com/alberttwong/redis-adbc-driver/issues/52) |
-| JSON functions | JSON payloads in text columns can't be unpacked in SQL | [#53](https://github.com/alberttwong/redis-adbc-driver/issues/53) |
-| Column `DEFAULT`s | Accepted in `CREATE TABLE` but not applied, so omitted columns are NULL | [#43](https://github.com/alberttwong/redis-adbc-driver/issues/43) |
-| `TRY_CAST` | Raises an error like `CAST` instead of returning NULL | [#44](https://github.com/alberttwong/redis-adbc-driver/issues/44) |
-| `%` on NUMERIC / DOUBLE | Returns DOUBLE, and `% 0` gives NaN; `MOD()` is correct | [#45](https://github.com/alberttwong/redis-adbc-driver/issues/45) |
-| Table key prefixes | Every table dbt builds keeps a `…__dbt_tmp~N` key prefix and index name (see below) | [#54](https://github.com/alberttwong/redis-adbc-driver/issues/54) |
+| Seeds with `TIMESTAMP` / `TIME` columns | `dbt seed` fails: `Unsupported column type for CSV load: TIMESTAMP(6)` | [#4](https://github.com/alberttwong/redis-dbt-project/issues/4) |
+| Model contracts | `contract: {enforced: true}` fails with a syntax error | [#5](https://github.com/alberttwong/redis-dbt-project/issues/5) |
+| Snapshots with `hard_deletes: new_record` | Fail from the second run (`get_columns_in_relation macro not implemented`) | [#6](https://github.com/alberttwong/redis-dbt-project/issues/6) |
+| The `microbatch` incremental strategy | `not valid for this adapter` | [#7](https://github.com/alberttwong/redis-dbt-project/issues/7) |
+| `dbt.listagg(…, limit_num)`, `dbt.safe_cast` | `listagg` with a limit needs arrays, and `safe_cast` is a plain `CAST` | [#8](https://github.com/alberttwong/redis-dbt-project/issues/8) |
+| `persist_docs` | Fails the model; the driver has no `COMMENT ON` yet ([driver #72](https://github.com/alberttwong/redis-adbc-driver/issues/72)) | [#9](https://github.com/alberttwong/redis-dbt-project/issues/9) |
+| `grants` | Fails the model; Redis controls access with ACLs, not `GRANT` | [#10](https://github.com/alberttwong/redis-dbt-project/issues/10) |
 
 Two limits come from the design rather than a missing feature:
 
@@ -187,9 +191,10 @@ docker exec redis-dbt-taxi redis-cli FT.INFO idx:raw:yellow_tripdata
 Tables built by dbt's rename-swap keep the row key prefix and index of the
 `__dbt_tmp` table they were created as. `ALTER TABLE … RENAME` only changes
 metadata, and the driver never reuses a prefix, so later builds get
-`…__dbt_tmp~2`, `~3` and so on
-([#54](https://github.com/alberttwong/redis-adbc-driver/issues/54)). Look up
-a table's current prefix and index in its metadata:
+`…__dbt_tmp~2`, `~3` and so on. To keep key names matching the tables, set
+`rename_rekey: true` in `profiles.yml`. Each rename then moves the table's
+rows to its own name's keys, which costs a copy of every row on each build.
+Either way, a table's current prefix and index are in its metadata:
 
 ```bash
 docker exec redis-dbt-taxi redis-cli GET 'adbc:{meta}:table:taxi_marts:agg_daily_revenue'

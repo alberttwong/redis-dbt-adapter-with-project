@@ -25,6 +25,11 @@ class RedisAdbcCredentials(Credentials):
     password: Optional[str] = None
     # exact | all | none (see the driver README).
     aggregate_pushdown: Optional[str] = None
+    # Move a renamed table's rows to its new name's keys (driver option
+    # adbc.redis.rename_rekey). dbt renames every table it builds, so this
+    # copies every row once more per build, in exchange for key names that
+    # match the table's.
+    rename_rekey: Optional[bool] = None
 
     @classmethod
     def __pre_deserialize__(cls, data):
@@ -42,7 +47,7 @@ class RedisAdbcCredentials(Credentials):
         return self.uri
 
     def _connection_keys(self) -> Tuple[str, ...]:
-        return ("driver", "uri", "database", "schema", "username", "aggregate_pushdown")
+        return ("driver", "uri", "database", "schema", "username", "aggregate_pushdown", "rename_rekey")
 
     def driver_path(self) -> str:
         path = self.driver or os.environ.get("REDIS_ADBC_DRIVER")
@@ -101,6 +106,8 @@ class RedisAdbcConnectionManager(SQLConnectionManager):
             db_kwargs["password"] = creds.password
         if creds.aggregate_pushdown:
             db_kwargs["adbc.redis.aggregate_pushdown"] = creds.aggregate_pushdown
+        if creds.rename_rekey is not None:
+            db_kwargs["adbc.redis.rename_rekey"] = "true" if creds.rename_rekey else "false"
 
         def connect():
             conn = dbapi.connect(driver=creds.driver_path(), db_kwargs=db_kwargs, autocommit=True)
