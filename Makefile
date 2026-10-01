@@ -8,6 +8,7 @@ setup: deps driver data redis-up
 
 deps:
 	uv sync
+	$(DBT) deps
 
 # The prebuilt driver from the pinned release (scripts/driver-version), or a
 # build from source where there's none. driver-build always builds.
