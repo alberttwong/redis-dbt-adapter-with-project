@@ -168,13 +168,6 @@ class RedisAdbcConnectionManager(SQLConnectionManager):
         rows = cursor.rowcount if cursor is not None else -1
         return AdapterResponse(_message="OK", rows_affected=rows if rows is not None else -1)
 
-    # The driver is autocommit-only: dbt's BEGIN/COMMIT become no-ops.
-    def add_begin_query(self):
-        pass
-
-    def add_commit_query(self):
-        pass
-
     @classmethod
     def data_type_code_to_name(cls, type_code) -> str:
         from dbt.adapters.redis_adbc.impl import arrow_type_to_sql

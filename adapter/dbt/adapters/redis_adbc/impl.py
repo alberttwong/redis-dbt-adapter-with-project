@@ -6,8 +6,6 @@ MERGE, window functions), so this adapter mostly provides the connection,
 metadata through ADBC GetObjects, and fast bulk loading through ADBC ingest.
 """
 
-import datetime
-import decimal
 import re
 from dataclasses import dataclass, field
 from typing import Dict, FrozenSet, List, Optional, Set, Tuple
@@ -17,7 +15,6 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.csv as pacsv
 from dbt_common.clients.agate_helper import table_from_rows
-from dbt_common.exceptions import DbtRuntimeError
 from dbt_common.utils import filter_null_values
 
 from dbt.adapters.base import BaseRelation, available
@@ -59,57 +56,6 @@ def arrow_type_to_sql(t) -> str:
     if pa.types.is_timestamp(t):
         return "TIMESTAMP WITH TIME ZONE" if t.tz else "TIMESTAMP"
     return str(t).upper()
-
-
-# SQL type names accepted in load_csv_file(column_types=...) -> Arrow types.
-_SQL_TO_ARROW = {
-    "BOOLEAN": pa.bool_(),
-    "SMALLINT": pa.int16(),
-    "INTEGER": pa.int32(),
-    "INT": pa.int32(),
-    "BIGINT": pa.int64(),
-    "REAL": pa.float32(),
-    "DOUBLE": pa.float64(),
-    "DOUBLE PRECISION": pa.float64(),
-    "VARCHAR": pa.string(),
-    "TEXT": pa.string(),
-    "DATE": pa.date32(),
-    "TIME": pa.time64("us"),
-    "TIMESTAMP": pa.timestamp("us"),
-    "TIMESTAMP WITH TIME ZONE": pa.timestamp("us", tz="UTC"),
-    "VARBINARY": pa.binary(),
-}
-
-
-# Fractional-second digits of TIME(p) / TIMESTAMP(p) -> Arrow unit.
-_TIME_UNITS = {0: "s", 3: "ms", 6: "us", 9: "ns"}
-
-
-def _sql_to_arrow(sql_type: str) -> pa.DataType:
-    """Arrow type of a SQL type name, as written in column_types or as the
-    driver reports it (TIMESTAMP(6) WITH TIME ZONE, NUMERIC(10,2), …)."""
-    key = " ".join(sql_type.upper().split())
-    m = re.fullmatch(r"(\w+(?: PRECISION)?)\s*(?:\(([\d\s,]+)\))?(\s+WITH(?:OUT)? TIME ZONE)?", key)
-    if not m:
-        raise DbtRuntimeError(f"Unsupported column type for CSV load: {sql_type}")
-    base, args, tz = m.group(1), m.group(2), (m.group(3) or "").strip()
-    nums = [int(a) for a in args.split(",")] if args else []
-    if base in ("NUMERIC", "DECIMAL"):
-        precision = nums[0] if nums else 38
-        return pa.decimal128(precision, nums[1] if len(nums) > 1 else 0)
-    if base in ("VARCHAR", "CHAR", "CHARACTER", "TEXT", "STRING"):
-        return pa.string()
-    if base in ("TIME", "TIMESTAMP", "TIMESTAMPTZ"):
-        unit = _TIME_UNITS.get(nums[0] if nums else 6)
-        if unit is None:
-            raise DbtRuntimeError(f"Unsupported precision for CSV load: {sql_type}")
-        if base == "TIME":
-            return pa.time32(unit) if unit in ("s", "ms") else pa.time64(unit)
-        with_tz = base == "TIMESTAMPTZ" or tz == "WITH TIME ZONE"
-        return pa.timestamp(unit, tz="UTC" if with_tz else None)
-    if base in _SQL_TO_ARROW and not nums:
-        return _SQL_TO_ARROW[base]
-    raise DbtRuntimeError(f"Unsupported column type for CSV load: {sql_type}")
 
 
 _TYPE_WITH_ARGS = re.compile(r"^\s*([A-Za-z ]+?)\s*\(\s*(\d+)\s*(?:,\s*(\d+)\s*)?\)\s*$")
@@ -408,11 +354,16 @@ class RedisAdbcAdapter(SQLAdapter):
 
         Streams the file with pyarrow, keeps every `sample_every`-th row up to
         `limit` rows, and writes them with ADBC bulk ingest. `column_types`
-        maps CSV column -> SQL type. If `row_number_column` is set, it is
-        prepended as a BIGINT holding each row's 1-based position in the file,
-        which stays the same however the file is sampled or reloaded.
+        maps CSV column -> SQL type, which can be any type the driver has. If
+        `row_number_column` is set, it is prepended as a BIGINT holding each
+        row's 1-based position in the file, which stays the same however the
+        file is sampled or reloaded.
         """
-        schema = {name: _sql_to_arrow(t) for name, t in column_types.items()}
+        # The driver's Arrow type for each SQL type, from a query that reads
+        # no rows. pyarrow parses the CSV into those.
+        casts = ", ".join(f"cast(null as {t}) as {self.quote(name)}" for name, t in column_types.items())
+        _, cursor = self.connections.add_select_query(f"select {casts} where false")
+        schema = {d[0]: d[1] for d in cursor.description}
         reader = pacsv.open_csv(
             path,
             convert_options=pacsv.ConvertOptions(
@@ -456,54 +407,10 @@ class RedisAdbcAdapter(SQLAdapter):
         """Append an agate table (a seed) to an existing table via ADBC ingest.
 
         Used instead of dbt's batched, parameterized INSERTs because bulk
-        ingest is much faster. Column types come from the table itself
-        (GetTableSchema), so any type dbt created the column with works.
+        ingest is much faster. The driver converts each value to its column's
+        type as an INSERT does (text and timestamps without a zone offset are
+        UTC), so any type dbt created the column with works.
         """
-        with self.connections.exception_handler(f"GetTableSchema {relation}"):
-            schema = self._adbc().adbc_get_table_schema(relation.identifier, db_schema_filter=relation.schema)
-        target = {f.name: f.type for f in schema}
-        arrays, names = [], []
-        for name, column in zip(agate_table.column_names, agate_table.columns):
-            if name not in target:
-                raise DbtRuntimeError(f"Seed column {name} is missing from {relation}")
-            arrow_type = target[name]
-            values = [_to_py(v, arrow_type) for v in column.values()]
-            try:
-                arr = pa.array(values, type=arrow_type)
-            except (pa.ArrowInvalid, pa.ArrowTypeError, TypeError):
-                # Columns with a configured column_type reach us as text.
-                arr = _text_to_arrow([None if v is None else str(v) for v in values], arrow_type)
-            arrays.append(arr)
-            names.append(name)
-        table = pa.Table.from_arrays(arrays, names=names)
+        table = pa.table({name: list(col.values()) for name, col in zip(agate_table.column_names, agate_table.columns)})
         self._ingest(relation, table, mode="append")
         return table.num_rows
-
-
-def _text_to_arrow(values: List[Optional[str]], arrow_type: pa.DataType) -> pa.Array:
-    """Parse seed text into arrow_type. Text without a zone offset for a
-    TIMESTAMP WITH TIME ZONE column is taken as UTC, as the driver stores
-    those values."""
-    text = pa.array(values, pa.string())
-    if pa.types.is_timestamp(arrow_type) and arrow_type.tz:
-        return text.cast(pa.timestamp(arrow_type.unit)).cast(arrow_type)
-    return text.cast(arrow_type)
-
-
-def _to_py(v, arrow_type: pa.DataType):
-    if v is None:
-        return None
-    if isinstance(v, decimal.Decimal):
-        if pa.types.is_integer(arrow_type):
-            return int(v)
-        if pa.types.is_floating(arrow_type):
-            return float(v)
-    if isinstance(v, datetime.datetime) and pa.types.is_date(arrow_type):
-        return v.date()
-    if isinstance(v, datetime.datetime) and pa.types.is_time(arrow_type):
-        return v.time()
-    if isinstance(v, str) and pa.types.is_time(arrow_type):
-        return datetime.time.fromisoformat(v)
-    if pa.types.is_string(arrow_type) and not isinstance(v, str):
-        return str(v)
-    return v
