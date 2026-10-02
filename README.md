@@ -71,10 +71,11 @@ Use `make docs-serve` to browse the docs and lineage graph.
 
 Redis is published on **6380** so it doesn't collide with a local Redis on
 6379. Override the connection with `REDIS_URI` (for example
-`rediss://default:<pw>@host:port/0` for Redis Cloud) and the driver location
-with `REDIS_ADBC_DRIVER`. Redis Flex (RAM + SSD) databases aren't supported:
-their Search lacks features every table needs, so the driver refuses them when
-it connects.
+`rediss://host:port/0` for Redis Cloud), credentials with `REDIS_USERNAME` and
+`REDIS_PASSWORD`, and the driver location with `REDIS_ADBC_DRIVER`. A password
+in `REDIS_URI` works too; `dbt debug` and the logs show it as `****`. Redis
+Flex (RAM + SSD) databases aren't supported: their Search lacks features every
+table needs, so the driver refuses them when it connects.
 
 ## dbt commands this project exercises
 
@@ -272,8 +273,9 @@ metadata, and the driver never gives a new table a prefix another table had
 `__dbt_tmp` therefore gets the next free one: `…__dbt_tmp:`, `…__dbt_tmp~2:`,
 `~3` and so on. To get keys named after the table, set `rename_rekey: true` in
 `profiles.yml`. Each rename then moves the table's rows to keys under its own
-name (`schema:table:` on the first build, `schema:table~N:` after that), which
-costs a copy of every row on each build.
+name (`schema:table:` on the first build, `schema:table~N:` after that). For a
+rebuilt table that costs one copy of its new rows: the adapter drops the old
+table instead of moving it to `__dbt_backup` first.
 Either way, a table's current prefix and index are in its metadata:
 
 ```bash

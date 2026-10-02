@@ -292,6 +292,22 @@ class RedisAdbcAdapter(SQLAdapter):
             for c in self._table_columns(schema, relation.identifier)
         ]
 
+    def rename_relation(self, from_relation: BaseRelation, to_relation: BaseRelation) -> None:
+        # With rename_rekey, a rename moves the table's rows to keys matching
+        # its new name. dbt's swap renames the old table to X__dbt_backup
+        # (moving all its rows), renames X__dbt_tmp to X, then drops the
+        # backup. Drop the old table instead, so only the new rows move, once,
+        # into X's keys. Views read X by name, so they're unaffected; if the
+        # second rename fails, the new rows are still in X__dbt_tmp.
+        if (
+            self.config.credentials.rename_rekey
+            and from_relation.type == RelationType.Table
+            and to_relation.identifier.endswith("__dbt_backup")
+        ):
+            self.drop_relation(from_relation)
+            return
+        super().rename_relation(from_relation, to_relation)
+
     def _make_match_kwargs(self, database: str, schema: str, identifier: str) -> Dict[str, str]:
         # The driver keeps schema and table names as written and matches them
         # case-sensitively, quoted or not (Postgres folds unquoted names to
