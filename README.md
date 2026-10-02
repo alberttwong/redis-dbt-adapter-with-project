@@ -22,8 +22,8 @@ dbt  ──►  dbt-redis-adbc (adapter/)  ──►  adbc_driver_manager  ─�
 
 ## Quick start
 
-Requirements: Docker and [uv](https://docs.astral.sh/uv/) (it provides Python
-3.10–3.13 for dbt). Building the driver from source also needs Go 1.26+ and a
+Requirements: Docker, [uv](https://docs.astral.sh/uv/) (it provides Python
+3.10–3.13 for dbt), and network access to hub.getdbt.com for `dbt deps`. Building the driver from source also needs Go 1.26+ and a
 C toolchain; on macOS arm64 and Linux (x86-64, arm64) the prebuilt one is used.
 
 ```bash
@@ -32,7 +32,7 @@ make setup
 
 `make setup` does four things:
 
-- runs `uv sync`
+- runs `uv sync` and `dbt deps` (dbt_utils, and the local `redis_adbc_utils`)
 - puts the driver in `driver/`: the prebuilt library from the pinned
   release (`v0.0.8`, in `scripts/driver-version`), after checking its SHA-256.
   Where the release has no build (another platform, or `DRIVER_VERSION` set
@@ -86,12 +86,12 @@ it connects.
 | `dbt run` | 5 views and 8 tables, rebuilt with dbt's create-then-`ALTER … RENAME` swap; plus 2 incremental models built from a `CREATE TEMPORARY TABLE`: `fct_trips` with `MERGE`, and `agg_zone_daily` with delete+insert on `(pickup_date, pickup_location_id)`. `dim_zones` has an enforced contract, so it's created from its DDL (with `NOT NULL` and `CHECK` constraints) and then filled with `INSERT`. The marts' descriptions are stored with `COMMENT ON` |
 | `dbt run --event-time-start … --event-time-end …` | `fct_trips_microbatch` (off unless `microbatch_demo` is set): one batch per pickup day; each batch deletes its day, then inserts it |
 | `dbt snapshot` | `zones_snapshot`: SCD type 2 history of the zone lookup (check strategy; a deleted zone gets a closing version), written by dbt's snapshot `MERGE` |
-| `dbt test` / `dbt build` | 51 data tests (`unique`, `not_null`, `accepted_values`, `relationships`, custom generic `non_negative` / `in_range`, 3 singular tests) and 2 unit tests |
+| `dbt test` / `dbt build` | 56 data tests (`unique`, `not_null`, `accepted_values`, `relationships`, dbt_utils' `unique_combination_of_columns` / `accepted_range`, custom generic `non_negative` / `in_range`, 4 singular tests) and 2 unit tests |
 | `dbt show`, `dbt compile`, `dbt ls` | Previews, inline queries, and the analysis in `analyses/` |
 | `dbt build --empty --exclude-resource-type snapshot` | Builds and tests every model with no rows, in about 6 s. dbt reads each ref and source as `(select * from … where false limit 0)`, which the driver answers without reading the table. Tables and seeds are left empty (incremental models keep their rows), so run `make all` afterwards. Leave out the snapshot: with an empty source, `hard_deletes: new_record` would record every zone as deleted |
 | `dbt docs generate` | Catalog built from ADBC `GetObjects` (column types, tables vs views), with the comments the marts store through `persist_docs` |
 
-A clean `make all` takes 1.5–2 minutes on a laptop. It ends with 72 passes and 1
+A clean `make all` takes 1.5–2 minutes on a laptop. It ends with 77 passes and 1
 **intended** warning: the source test flags a $623,261.66 fare in the raw
 data, which staging filters out.
 
@@ -113,6 +113,7 @@ tests/            generic (non_negative, in_range) and singular tests, including
                   cross-database macros
 analyses/         top_pickup_zones_by_day_part
 adapter/          the dbt-redis-adbc adapter package (installed editable by uv)
+redis_adbc_utils/ redis_adbc__ overrides for dbt_utils, dbt_date and dbt_expectations macros
 scripts/          download_driver.sh, build_driver.sh, driver-version, download_data.sh
 ```
 
@@ -148,6 +149,18 @@ materializations, so the adapter covers what isn't SQL:
 | Cross-database macros | dbt-core's defaults work natively except two: `safe_cast` uses the driver's `TRY_CAST`, and `listagg` with `limit_num` raises a clear error (it needs arrays). `tests/assert_cross_db_macros.sql` checks them all |
 | Model contracts | An enforced contract creates the table from its DDL, then inserts the rows (as on dbt-postgres). `not_null` and `check` are enforced by the driver; `primary_key`, `unique` and `foreign_key` are accepted but not enforced (dbt warns) |
 | Small dialect bits | `?` bind parameters, `CURRENT_TIMESTAMP`, a subquery wrapper for `dbt show --limit`, and no alias on the subqueries `--empty` and microbatch put around refs, so a model's own alias (`from {{ ref('x') }} z`) still works |
+
+**Packages.** dbt looks for a package macro's adapter variants only in the
+root project and the package itself, so the adapter can't fix a package's
+`default__` macros that are wrong here. [`redis_adbc_utils/`](redis_adbc_utils/README.md)
+holds those fixes:
+- `dbt_utils.deduplicate`: the default drops rows with NULLs.
+- dbt_expectations' regex `flags`: the default ignores them.
+- dbt_date's day and month names, and its week and ISO-week macros: the
+  defaults use Snowflake semantics.
+
+This project installs it with dbt_utils and puts it first in
+`dispatch:`. Copy that setup to use those packages with Redis.
 
 Profile options (`profiles.yml`): `driver` (the library's path; without an
 extension, the adapter adds `.dylib`, `.so` or `.dll`), `uri`, `username`,

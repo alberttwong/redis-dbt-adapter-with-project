@@ -1,0 +1,5 @@
+packages:
+  - package: dbt-labs/dbt_utils
+    version: [">=1.3.0", "<2.0.0"]
+  # redis_adbc__ overrides for package macros (see redis_adbc_utils/README.md).
+  - local: redis_adbc_utils

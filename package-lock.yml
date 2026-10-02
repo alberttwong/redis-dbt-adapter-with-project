@@ -1,0 +1,7 @@
+packages:
+  - name: dbt_utils
+    package: dbt-labs/dbt_utils
+    version: 1.4.1
+  - local: redis_adbc_utils
+    name: redis_adbc_utils
+sha1_hash: b8a82f0a16818fbe5a9b2e110241faa17981587c
