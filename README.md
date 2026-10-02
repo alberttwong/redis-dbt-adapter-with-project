@@ -22,8 +22,8 @@ dbt  ──►  dbt-redis-adbc (adapter/)  ──►  adbc_driver_manager  ─�
 
 ## Quick start
 
-Requirements: Docker and [uv](https://docs.astral.sh/uv/) (it provides Python
-3.10–3.13 for dbt). Building the driver from source also needs Go 1.26+ and a
+Requirements: Docker, [uv](https://docs.astral.sh/uv/) (it provides Python
+3.10–3.13 for dbt), and network access to hub.getdbt.com for `dbt deps`. Building the driver from source also needs Go 1.26+ and a
 C toolchain; on macOS arm64 and Linux (x86-64, arm64) the prebuilt one is used.
 
 ```bash
@@ -32,9 +32,9 @@ make setup
 
 `make setup` does four things:
 
-- runs `uv sync`
+- runs `uv sync` and `dbt deps` (dbt_utils, and the local `redis_adbc_utils`)
 - puts the driver in `driver/`: the prebuilt library from the pinned
-  release (`v0.0.7`, in `scripts/driver-version`), after checking its SHA-256.
+  release (`v0.0.8`, in `scripts/driver-version`), after checking its SHA-256.
   Where the release has no build (another platform, or `DRIVER_VERSION` set
   to a commit) it builds the driver from source instead; `make driver-build`
   always does
@@ -48,7 +48,7 @@ make all
 `make all` runs `dbt debug`, `seed`, `run-operation load_raw_trips`, `build`
 and `docs generate`. Three demos show what happens across runs.
 
-Load the first half of January, then merge in the rest:
+Load the first half of January, then the rest: `fct_trips` merges the new trips, and `agg_zone_daily` replaces the zone-days they touch (delete+insert on a composite key):
 
 ```bash
 make incremental-demo
@@ -84,15 +84,15 @@ table needs, so the driver refuses them when it connects.
 | `dbt debug` | Opens an ADBC connection. The driver checks that the Query Engine is available (`FT._LIST`) and that `FT.AGGREGATE` works, which is how it refuses Redis Flex |
 | `dbt seed` | 4 lookup CSVs (zones, payment types, rate codes, vendors), loaded with ADBC bulk ingest; reloads use `TRUNCATE` |
 | `dbt run-operation load_raw_trips` | Streams the 134 MB gzipped CSV with pyarrow, keeps every 50th row (~153k trips across January), adds `trip_id` (the trip's row number in the file), and bulk-ingests it into `raw.yellow_tripdata` in 6–10 s |
-| `dbt run` | 5 views and 8 tables, rebuilt with dbt's create-then-`ALTER … RENAME` swap; plus 1 incremental model, built by `CREATE TEMPORARY TABLE` then `MERGE`. `dim_zones` has an enforced contract, so it's created from its DDL (with `NOT NULL` and `CHECK` constraints) and then filled with `INSERT`. The marts' descriptions are stored with `COMMENT ON` |
+| `dbt run` | 5 views and 8 tables, rebuilt with dbt's create-then-`ALTER … RENAME` swap; plus 2 incremental models built from a `CREATE TEMPORARY TABLE`: `fct_trips` with `MERGE`, and `agg_zone_daily` with delete+insert on `(pickup_date, pickup_location_id)`. `dim_zones` has an enforced contract, so it's created from its DDL (with `NOT NULL` and `CHECK` constraints) and then filled with `INSERT`. The marts' descriptions are stored with `COMMENT ON` |
 | `dbt run --event-time-start … --event-time-end …` | `fct_trips_microbatch` (off unless `microbatch_demo` is set): one batch per pickup day; each batch deletes its day, then inserts it |
 | `dbt snapshot` | `zones_snapshot`: SCD type 2 history of the zone lookup (check strategy; a deleted zone gets a closing version), written by dbt's snapshot `MERGE` |
-| `dbt test` / `dbt build` | 49 data tests (`unique`, `not_null`, `accepted_values`, `relationships`, custom generic `non_negative` / `in_range`, 3 singular tests) and 2 unit tests |
+| `dbt test` / `dbt build` | 56 data tests (`unique`, `not_null`, `accepted_values`, `relationships`, dbt_utils' `unique_combination_of_columns` / `accepted_range`, custom generic `non_negative` / `in_range`, 4 singular tests) and 2 unit tests |
 | `dbt show`, `dbt compile`, `dbt ls` | Previews, inline queries, and the analysis in `analyses/` |
-| `dbt build --empty --exclude-resource-type snapshot` | Builds and tests every model with no rows, in about 6 s. dbt reads each ref and source as `(select * from … where false limit 0)`, which the driver answers without reading the table. Tables and seeds are left empty (incremental models keep their rows), so run `make all` afterwards. Leave out the snapshot: with an empty source, `hard_deletes: new_record` would record every zone as deleted |
+| `dbt build --empty --exclude-resource-type snapshot` | Builds and tests every model with no rows, in about 6 s. dbt reads each ref and source as `(select * from … where false limit 0)`, which the driver answers without reading the table. Tables, views and seeds are left empty (a view keeps the `where false limit 0` in its SQL; incremental models keep their rows), so run `make all` afterwards. Leave out the snapshot: with an empty source, `hard_deletes: new_record` would record every zone as deleted |
 | `dbt docs generate` | Catalog built from ADBC `GetObjects` (column types, tables vs views), with the comments the marts store through `persist_docs` |
 
-A clean `make all` takes 1.5–2 minutes on a laptop. It ends with 69 passes and 1
+A clean `make all` takes 1.5–2 minutes on a laptop. It ends with 77 passes and 1
 **intended** warning: the source test flags a $623,261.66 fare in the raw
 data, which staging filters out.
 
@@ -102,7 +102,8 @@ data, which staging filters out.
 models/
   staging/        views over raw + seeds: rename, type, filter, derive hour/weekday/duration
   intermediate/   int_trips_enriched: trips ⋈ zones (×2) ⋈ payment types ⋈ rate codes ⋈ vendors
-  marts/          fct_trips (incremental MERGE), fct_trips_microbatch (optional), dim_zones
+  marts/          fct_trips (incremental MERGE), agg_zone_daily (incremental delete+insert on a
+                  composite key), fct_trips_microbatch (optional), dim_zones
                   (enforced contract), agg_daily_revenue (7-day rolling average, LAG, RANK),
                   agg_top_pickup_zones (RANK … QUALIFY), agg_hourly_demand, agg_borough_flows,
                   agg_payment_mix, agg_airport_trips
@@ -113,6 +114,7 @@ tests/            generic (non_negative, in_range) and singular tests, including
                   cross-database macros
 analyses/         top_pickup_zones_by_day_part
 adapter/          the dbt-redis-adbc adapter package (installed editable by uv)
+redis_adbc_utils/ redis_adbc__ overrides for dbt_utils, dbt_date and dbt_expectations macros
 scripts/          download_driver.sh, build_driver.sh, driver-version, download_data.sh
 ```
 
@@ -143,10 +145,23 @@ materializations, so the adapter covers what isn't SQL:
 | `grants` | Skipped with a warning (see [Known limitations](#known-limitations)) |
 | Temporary tables | `make_temp_relation` renders them unqualified (a schema-qualified name always means a permanent table), and their columns are looked up under `pg_temp` |
 | Incremental strategies | `append`, `delete+insert` (the default with a `unique_key`), `merge`, and `microbatch` (each batch replaces its `event_time` window; batches can run in parallel) |
+| Seed reloads | A reload without `--full-refresh` checks the CSV's columns before truncating, so a mismatch leaves the table as it was (there's no transaction to roll the `TRUNCATE` back) |
 | Loading | Seeds and the raw CSV go through Arrow bulk ingest, which is much faster than INSERTs |
 | Cross-database macros | dbt-core's defaults work natively except two: `safe_cast` uses the driver's `TRY_CAST`, and `listagg` with `limit_num` raises a clear error (it needs arrays). `tests/assert_cross_db_macros.sql` checks them all |
 | Model contracts | An enforced contract creates the table from its DDL, then inserts the rows (as on dbt-postgres). `not_null` and `check` are enforced by the driver; `primary_key`, `unique` and `foreign_key` are accepted but not enforced (dbt warns) |
 | Small dialect bits | `?` bind parameters, `CURRENT_TIMESTAMP`, a subquery wrapper for `dbt show --limit`, and no alias on the subqueries `--empty` and microbatch put around refs, so a model's own alias (`from {{ ref('x') }} z`) still works |
+
+**Packages.** dbt looks for a package macro's adapter variants only in the
+root project and the package itself, so the adapter can't fix a package's
+`default__` macros that are wrong here. [`redis_adbc_utils/`](redis_adbc_utils/README.md)
+holds those fixes:
+- `dbt_utils.deduplicate`: the default drops rows with NULLs.
+- dbt_expectations' regex `flags`: the default ignores them.
+- dbt_date's day and month names, and its week and ISO-week macros: the
+  defaults use Snowflake semantics.
+
+This project installs it with dbt_utils and puts it first in
+`dispatch:`. Copy that setup to use those packages with Redis.
 
 Profile options (`profiles.yml`): `driver` (the library's path; without an
 extension, the adapter adds `.dylib`, `.so` or `.dll`), `uri`, `username`,
@@ -158,7 +173,7 @@ extension, the adapter adds `.dylib`, `.so` or `.dll`), `uri`, `username`,
 
 Building this project turned up these issues, all filed on
 [alberttwong/redis-adbc-driver](https://github.com/alberttwong/redis-adbc-driver/issues).
-All of them are fixed in the pinned driver, v0.0.7.
+All but the last four are fixed in the pinned driver, v0.0.8.
 
 | Issue | Fixed in |
 |-|-|
@@ -187,16 +202,39 @@ All of them are fixed in the pinned driver, v0.0.7.
 | [#74](https://github.com/alberttwong/redis-adbc-driver/issues/74) `WHERE false` / `LIMIT 0` ran the whole query (dbt's contract checks, `--empty`: 5 s → 2 ms on `dim_zones`) | [#77](https://github.com/alberttwong/redis-adbc-driver/pull/77) |
 | [#75](https://github.com/alberttwong/redis-adbc-driver/issues/75) Column-level `CHECK` / `REFERENCES` didn't parse; `CHECK` wasn't enforced | [#76](https://github.com/alberttwong/redis-adbc-driver/pull/76) |
 | [#78](https://github.com/alberttwong/redis-adbc-driver/issues/78) Unknown functions were only caught when a row was evaluated, so they passed contract checks and `--empty` | [#79](https://github.com/alberttwong/redis-adbc-driver/pull/79) |
+| [#82](https://github.com/alberttwong/redis-adbc-driver/issues/82) Wrong results: a table re-created after a concurrent `DROP` read the dropped table's leftover rows | [#99](https://github.com/alberttwong/redis-adbc-driver/pull/99) |
+| [#83](https://github.com/alberttwong/redis-adbc-driver/issues/83), [#101](https://github.com/alberttwong/redis-adbc-driver/issues/101) `SUM` / `AVG` of DOUBLE varied with row order and pushdown mode, and gave `NaN` with `aggregate_pushdown=all` on a cluster | [#107](https://github.com/alberttwong/redis-adbc-driver/pull/107) |
+| [#84](https://github.com/alberttwong/redis-adbc-driver/issues/84), [#88](https://github.com/alberttwong/redis-adbc-driver/issues/88), [#90](https://github.com/alberttwong/redis-adbc-driver/issues/90) Timestamp text kept trailing zeros; no `AT TIME ZONE` / `convert_timezone()`; `to_char` printed `WW`, `J`, … literally (dbt_utils' `generate_surrogate_key`, dbt_date) | [#97](https://github.com/alberttwong/redis-adbc-driver/pull/97) |
+| [#85](https://github.com/alberttwong/redis-adbc-driver/issues/85) Row values, `(k1, k2) IN (…)` (dbt's delete+insert with a list `unique_key`) | [#98](https://github.com/alberttwong/redis-adbc-driver/pull/98) |
+| [#86](https://github.com/alberttwong/redis-adbc-driver/issues/86), [#87](https://github.com/alberttwong/redis-adbc-driver/issues/87), [#94](https://github.com/alberttwong/redis-adbc-driver/issues/94) A 5–10 s client read timeout; a killed `rename_rekey` rename blocked retries; incomplete ACL docs | [#100](https://github.com/alberttwong/redis-adbc-driver/pull/100) |
+| [#89](https://github.com/alberttwong/redis-adbc-driver/issues/89) Trigonometric functions (dbt_utils' `haversine_distance`) | [#107](https://github.com/alberttwong/redis-adbc-driver/pull/107) |
+| [#91](https://github.com/alberttwong/redis-adbc-driver/issues/91), [#92](https://github.com/alberttwong/redis-adbc-driver/issues/92) Multi-action `ALTER TABLE` (`on_schema_change`); `BEGIN` / `COMMIT` / `SET` (hooks outside the transaction) | [#96](https://github.com/alberttwong/redis-adbc-driver/pull/96) |
+| [#93](https://github.com/alberttwong/redis-adbc-driver/issues/93) `VARCHAR(n)` / `CHAR(n)` lengths were ignored | [#95](https://github.com/alberttwong/redis-adbc-driver/pull/95) |
+| [#102](https://github.com/alberttwong/redis-adbc-driver/issues/102) Wrong results: `t.col` inside `(… from t x …)` read the inner row | [#108](https://github.com/alberttwong/redis-adbc-driver/pull/108) |
+| [#103](https://github.com/alberttwong/redis-adbc-driver/issues/103), [#105](https://github.com/alberttwong/redis-adbc-driver/issues/105) Casts to a lower time precision truncated; no session time zone | [#106](https://github.com/alberttwong/redis-adbc-driver/pull/106) |
+| [#104](https://github.com/alberttwong/redis-adbc-driver/issues/104) Data loss: `TRUNCATE … RESTART IDENTITY` during a concurrent write | [#109](https://github.com/alberttwong/redis-adbc-driver/pull/109) |
+| [#110](https://github.com/alberttwong/redis-adbc-driver/issues/110) Rows whose DOUBLE column is `NaN` are written but never returned | Open |
+| [#111](https://github.com/alberttwong/redis-adbc-driver/issues/111) Schema-qualified column references (`s.t.col`) ignore the schema | Open |
+| [#112](https://github.com/alberttwong/redis-adbc-driver/issues/112) `GROUP BY` doesn't reject ungrouped outer columns inside subqueries | Open |
+| [#113](https://github.com/alberttwong/redis-adbc-driver/issues/113) Fractional-second precisions other than 0, 3, 6 and 9 snap to 3, 6 or 9 digits | Open |
 
 ## Known limitations
 
 The driver runs the SQL that dbt and its cross-database macros generate, and
-the dbt features above all work. Three limits come from the design:
+the dbt features above all work. dbt doesn't generate the SQL the open driver
+issues above need. In your own SQL, name columns by alias rather than
+`schema.table.column`
+([driver #111](https://github.com/alberttwong/redis-adbc-driver/issues/111)),
+and keep `NaN` out of DOUBLE columns
+([driver #110](https://github.com/alberttwong/redis-adbc-driver/issues/110)).
+Three limits come from the design:
 
 - **No transactions.** Every statement autocommits, so a run that stops in
   the middle of a materialization can leave a `__dbt_tmp` or `__dbt_backup`
   relation behind. dbt drops those at the start of the next run of that
-  model.
+  model. The run's temporary tables (`pg_temp_N`) stay until the driver's
+  2-minute heartbeat for that connection runs out; the next connection then
+  removes them.
 - **SQL models only.** dbt Python models aren't supported, and neither are
   materialized views (`materialized='materialized_view'` stops with a clear
   error).
@@ -204,9 +242,21 @@ the dbt features above all work. Three limits come from the design:
   commands), not SQL privileges on tables, so a `grants` config is skipped
   with a warning.
 
+## Access control
+
+dbt can run as a Redis ACL user (`username` / `password` in `profiles.yml`).
+The commands and key patterns the driver needs, per feature, and a read-only
+user recipe are in the
+[driver's README](https://github.com/alberttwong/redis-adbc-driver#server-requirements).
+A read-only user can run `dbt show`, the data tests
+and `docs generate`. Unit tests and snapshots create temporary tables, which
+need `INCRBY` on the driver's metadata keys, so they fail for a read-only
+user (dbt reports the unit-test failure as a data-type mismatch).
+
 ## Looking at the data in Redis
 
-Each row is a HASH, and each table has a RediSearch index:
+Each row is a HASH, and each table has a RediSearch index. On a cluster, add
+`-c` to `redis-cli` so it follows the key to its shard:
 
 ```bash
 docker exec redis-dbt-taxi redis-cli HGETALL raw:yellow_tripdata:1
@@ -218,12 +268,14 @@ docker exec redis-dbt-taxi redis-cli FT.INFO idx:raw:yellow_tripdata
 
 Tables built by dbt's rename-swap keep the row key prefix and index of the
 `__dbt_tmp` table they were created as. `ALTER TABLE … RENAME` only changes
-metadata, and the driver never reuses a prefix, so later builds get
-`…__dbt_tmp~2`, `~3` and so on. To keep key names matching the tables, set
-`rename_rekey: true` in `profiles.yml`. Each rename then moves the table's
-rows to its own name's keys. For a rebuilt table that costs one copy of its
-new rows: the adapter drops the old table instead of moving it to
-`__dbt_backup` first.
+metadata, and the driver never gives a new table a prefix another table had
+(so a dropped or truncated table's leftover keys can't reach it). Each build's
+`__dbt_tmp` therefore gets the next free one: `…__dbt_tmp:`, `…__dbt_tmp~2:`,
+`~3` and so on. To get keys named after the table, set `rename_rekey: true` in
+`profiles.yml`. Each rename then moves the table's rows to keys under its own
+name (`schema:table:` on the first build, `schema:table~N:` after that). For a
+rebuilt table that costs one copy of its new rows: the adapter drops the old
+table instead of moving it to `__dbt_backup` first.
 Either way, a table's current prefix and index are in its metadata:
 
 ```bash

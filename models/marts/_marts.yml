@@ -44,6 +44,17 @@ models:
         constraints: [{type: not_null}, {type: check, expression: "dropoffs >= 0"}]
       - {name: pickup_revenue, data_type: double precision}
 
+  - name: agg_zone_daily
+    description: >
+      Trips and revenue per pickup zone and day. Incremental with the
+      composite key (pickup_date, pickup_location_id) and the default
+      delete+insert strategy.
+    columns:
+      - name: pickup_date
+        data_tests: [not_null]
+      - name: pickup_location_id
+        data_tests: [not_null]
+
   - name: agg_daily_revenue
     description: >
       Trips, passengers, miles and revenue per pickup date, with window
@@ -82,6 +93,18 @@ models:
 
   - name: agg_borough_flows
     description: Trips between boroughs with at least 25 trips (GROUP BY ... HAVING).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [pickup_borough, dropoff_borough]
+    columns:
+      - name: flow_key
+        description: dbt_utils.generate_surrogate_key of the two boroughs.
+        data_tests: [unique, not_null]
+      - name: total_revenue
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0}
 
   - name: agg_payment_mix
     description: Share of trips and tips by payment type (SUM(COUNT(*)) OVER () for the total).

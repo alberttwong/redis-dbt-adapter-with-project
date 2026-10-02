@@ -10,7 +10,13 @@ test-paths: ["tests"]
 macro-paths: ["macros"]
 analysis-paths: ["analyses"]
 
-clean-targets: ["target", "logs"]
+clean-targets: ["target", "logs", "dbt_packages"]
+
+# dbt_utils macros whose defaults are wrong on Redis come from
+# redis_adbc_utils first.
+dispatch:
+  - macro_namespace: dbt_utils
+    search_order: ["redis_adbc_utils", "dbt_utils"]
 
 vars:
   # The raw file and how much of it to load (see macros/load_raw_trips.sql).

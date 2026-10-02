@@ -3,6 +3,7 @@
 {% set min_trips = 25 %}
 
 select
+    {{ dbt_utils.generate_surrogate_key(['pickup_borough', 'dropoff_borough']) }} as flow_key,
     pickup_borough,
     dropoff_borough,
     count(*)                                    as trips,

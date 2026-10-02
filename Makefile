@@ -8,6 +8,7 @@ setup: deps driver data redis-up
 
 deps:
 	uv sync
+	$(DBT) deps
 
 # The prebuilt driver from the pinned release (scripts/driver-version), or a
 # build from source where there's none. driver-build always builds.
@@ -52,11 +53,16 @@ snapshot:
 
 # fct_trips with the first half of January, then an incremental run that
 # reloads the last day and appends the rest.
+# fct_trips (merge) and agg_zone_daily (delete+insert on a composite key):
+# load the first half of January, then the rest. The zone-day totals always
+# add up to the trips.
+INCREMENTAL_DEMO_SQL = select (select count(*) from {{ ref('fct_trips') }}) as trips, (select max(pickup_datetime) from {{ ref('fct_trips') }}) as last_pickup, (select sum(trips) from {{ ref('agg_zone_daily') }}) as zone_day_trips, (select count(*) from {{ ref('agg_zone_daily') }}) as zone_days
+
 incremental-demo:
-	$(DBT) run -s +fct_trips --full-refresh --vars '{trips_end: "2019-01-16 00:00:00"}'
-	$(DBT) show --inline "select count(*) as trips, max(pickup_datetime) as last_pickup from {{ ref('fct_trips') }}" --vars '{trips_end: "2019-01-16 00:00:00"}'
-	$(DBT) run -s +fct_trips
-	$(DBT) show --inline "select count(*) as trips, max(pickup_datetime) as last_pickup from {{ ref('fct_trips') }}"
+	$(DBT) run -s +agg_zone_daily --full-refresh --vars '{trips_end: "2019-01-16 00:00:00"}'
+	$(DBT) show --inline "$(INCREMENTAL_DEMO_SQL)" --vars '{trips_end: "2019-01-16 00:00:00"}'
+	$(DBT) run -s +agg_zone_daily
+	$(DBT) show --inline "$(INCREMENTAL_DEMO_SQL)"
 
 # Snapshot the zone lookup, rename JFK, snapshot again: the history keeps
 # both versions. `dbt seed` then restores the lookup (a third snapshot would
