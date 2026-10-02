@@ -53,3 +53,16 @@
 {% materialization materialized_view, adapter='redis_adbc' %}
   {{ exceptions.raise_compiler_error("materialized views aren't supported on Redis (" ~ this ~ "); use materialized='table' or 'incremental'") }}
 {% endmaterialization %}
+
+{#- Seeds: a reload without --full-refresh truncates the table, then loads
+    it. With no transactions, a CSV whose columns the table doesn't have
+    would leave the seed empty, so check the columns first. -#}
+{% macro redis_adbc__reset_csv_table(model, full_refresh, old_relation, agate_table) %}
+  {%- if not full_refresh -%}
+    {%- set existing = adapter.get_columns_in_relation(old_relation) | map(attribute="name") | list -%}
+    {%- for name in agate_table.column_names if name not in existing -%}
+      {{ exceptions.raise_compiler_error("Seed column " ~ name ~ " is missing from " ~ old_relation ~ "; run dbt seed --full-refresh to recreate it with the CSV's columns") }}
+    {%- endfor -%}
+  {%- endif -%}
+  {{ return(default__reset_csv_table(model, full_refresh, old_relation, agate_table)) }}
+{% endmacro %}

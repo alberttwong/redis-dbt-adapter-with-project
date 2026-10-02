@@ -44,6 +44,17 @@ models:
         constraints: [{type: not_null}, {type: check, expression: "dropoffs >= 0"}]
       - {name: pickup_revenue, data_type: double precision}
 
+  - name: agg_zone_daily
+    description: >
+      Trips and revenue per pickup zone and day. Incremental with the
+      composite key (pickup_date, pickup_location_id) and the default
+      delete+insert strategy.
+    columns:
+      - name: pickup_date
+        data_tests: [not_null]
+      - name: pickup_location_id
+        data_tests: [not_null]
+
   - name: agg_daily_revenue
     description: >
       Trips, passengers, miles and revenue per pickup date, with window

@@ -48,7 +48,7 @@ make all
 `make all` runs `dbt debug`, `seed`, `run-operation load_raw_trips`, `build`
 and `docs generate`. Three demos show what happens across runs.
 
-Load the first half of January, then merge in the rest:
+Load the first half of January, then the rest: `fct_trips` merges the new trips, and `agg_zone_daily` replaces the zone-days they touch (delete+insert on a composite key):
 
 ```bash
 make incremental-demo
@@ -83,15 +83,15 @@ it connects.
 | `dbt debug` | Opens an ADBC connection. The driver checks that the Query Engine is available (`FT._LIST`) and that `FT.AGGREGATE` works, which is how it refuses Redis Flex |
 | `dbt seed` | 4 lookup CSVs (zones, payment types, rate codes, vendors), loaded with ADBC bulk ingest; reloads use `TRUNCATE` |
 | `dbt run-operation load_raw_trips` | Streams the 134 MB gzipped CSV with pyarrow, keeps every 50th row (~153k trips across January), adds `trip_id` (the trip's row number in the file), and bulk-ingests it into `raw.yellow_tripdata` in 6–10 s |
-| `dbt run` | 5 views and 8 tables, rebuilt with dbt's create-then-`ALTER … RENAME` swap; plus 1 incremental model, built by `CREATE TEMPORARY TABLE` then `MERGE`. `dim_zones` has an enforced contract, so it's created from its DDL (with `NOT NULL` and `CHECK` constraints) and then filled with `INSERT`. The marts' descriptions are stored with `COMMENT ON` |
+| `dbt run` | 5 views and 8 tables, rebuilt with dbt's create-then-`ALTER … RENAME` swap; plus 2 incremental models built from a `CREATE TEMPORARY TABLE`: `fct_trips` with `MERGE`, and `agg_zone_daily` with delete+insert on `(pickup_date, pickup_location_id)`. `dim_zones` has an enforced contract, so it's created from its DDL (with `NOT NULL` and `CHECK` constraints) and then filled with `INSERT`. The marts' descriptions are stored with `COMMENT ON` |
 | `dbt run --event-time-start … --event-time-end …` | `fct_trips_microbatch` (off unless `microbatch_demo` is set): one batch per pickup day; each batch deletes its day, then inserts it |
 | `dbt snapshot` | `zones_snapshot`: SCD type 2 history of the zone lookup (check strategy; a deleted zone gets a closing version), written by dbt's snapshot `MERGE` |
-| `dbt test` / `dbt build` | 49 data tests (`unique`, `not_null`, `accepted_values`, `relationships`, custom generic `non_negative` / `in_range`, 3 singular tests) and 2 unit tests |
+| `dbt test` / `dbt build` | 51 data tests (`unique`, `not_null`, `accepted_values`, `relationships`, custom generic `non_negative` / `in_range`, 3 singular tests) and 2 unit tests |
 | `dbt show`, `dbt compile`, `dbt ls` | Previews, inline queries, and the analysis in `analyses/` |
 | `dbt build --empty --exclude-resource-type snapshot` | Builds and tests every model with no rows, in about 6 s. dbt reads each ref and source as `(select * from … where false limit 0)`, which the driver answers without reading the table. Tables and seeds are left empty (incremental models keep their rows), so run `make all` afterwards. Leave out the snapshot: with an empty source, `hard_deletes: new_record` would record every zone as deleted |
 | `dbt docs generate` | Catalog built from ADBC `GetObjects` (column types, tables vs views), with the comments the marts store through `persist_docs` |
 
-A clean `make all` takes 1.5–2 minutes on a laptop. It ends with 69 passes and 1
+A clean `make all` takes 1.5–2 minutes on a laptop. It ends with 72 passes and 1
 **intended** warning: the source test flags a $623,261.66 fare in the raw
 data, which staging filters out.
 
@@ -101,7 +101,8 @@ data, which staging filters out.
 models/
   staging/        views over raw + seeds: rename, type, filter, derive hour/weekday/duration
   intermediate/   int_trips_enriched: trips ⋈ zones (×2) ⋈ payment types ⋈ rate codes ⋈ vendors
-  marts/          fct_trips (incremental MERGE), fct_trips_microbatch (optional), dim_zones
+  marts/          fct_trips (incremental MERGE), agg_zone_daily (incremental delete+insert on a
+                  composite key), fct_trips_microbatch (optional), dim_zones
                   (enforced contract), agg_daily_revenue (7-day rolling average, LAG, RANK),
                   agg_top_pickup_zones (RANK … QUALIFY), agg_hourly_demand, agg_borough_flows,
                   agg_payment_mix, agg_airport_trips
@@ -142,6 +143,7 @@ materializations, so the adapter covers what isn't SQL:
 | `grants` | Skipped with a warning (see [Known limitations](#known-limitations)) |
 | Temporary tables | `make_temp_relation` renders them unqualified (a schema-qualified name always means a permanent table), and their columns are looked up under `pg_temp` |
 | Incremental strategies | `append`, `delete+insert` (the default with a `unique_key`), `merge`, and `microbatch` (each batch replaces its `event_time` window; batches can run in parallel) |
+| Seed reloads | A reload without `--full-refresh` checks the CSV's columns before truncating, so a mismatch leaves the table as it was (there's no transaction to roll the `TRUNCATE` back) |
 | Loading | Seeds and the raw CSV go through Arrow bulk ingest, which is much faster than INSERTs |
 | Cross-database macros | dbt-core's defaults work natively except two: `safe_cast` uses the driver's `TRY_CAST`, and `listagg` with `limit_num` raises a clear error (it needs arrays). `tests/assert_cross_db_macros.sql` checks them all |
 | Model contracts | An enforced contract creates the table from its DDL, then inserts the rows (as on dbt-postgres). `not_null` and `check` are enforced by the driver; `primary_key`, `unique` and `foreign_key` are accepted but not enforced (dbt warns) |
