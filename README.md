@@ -34,7 +34,7 @@ make setup
 
 - runs `uv sync`
 - puts the driver in `driver/`: the prebuilt library from the pinned
-  release (`v0.0.7`, in `scripts/driver-version`), after checking its SHA-256.
+  release (`v0.0.8`, in `scripts/driver-version`), after checking its SHA-256.
   Where the release has no build (another platform, or `DRIVER_VERSION` set
   to a commit) it builds the driver from source instead; `make driver-build`
   always does
@@ -157,7 +157,7 @@ extension, the adapter adds `.dylib`, `.so` or `.dll`), `uri`, `username`,
 
 Building this project turned up these issues, all filed on
 [alberttwong/redis-adbc-driver](https://github.com/alberttwong/redis-adbc-driver/issues).
-All of them are fixed in the pinned driver, v0.0.7.
+All but the last four are fixed in the pinned driver, v0.0.8.
 
 | Issue | Fixed in |
 |-|-|
@@ -186,11 +186,32 @@ All of them are fixed in the pinned driver, v0.0.7.
 | [#74](https://github.com/alberttwong/redis-adbc-driver/issues/74) `WHERE false` / `LIMIT 0` ran the whole query (dbt's contract checks, `--empty`: 5 s → 2 ms on `dim_zones`) | [#77](https://github.com/alberttwong/redis-adbc-driver/pull/77) |
 | [#75](https://github.com/alberttwong/redis-adbc-driver/issues/75) Column-level `CHECK` / `REFERENCES` didn't parse; `CHECK` wasn't enforced | [#76](https://github.com/alberttwong/redis-adbc-driver/pull/76) |
 | [#78](https://github.com/alberttwong/redis-adbc-driver/issues/78) Unknown functions were only caught when a row was evaluated, so they passed contract checks and `--empty` | [#79](https://github.com/alberttwong/redis-adbc-driver/pull/79) |
+| [#82](https://github.com/alberttwong/redis-adbc-driver/issues/82) Wrong results: a table re-created after a concurrent `DROP` read the dropped table's leftover rows | [#99](https://github.com/alberttwong/redis-adbc-driver/pull/99) |
+| [#83](https://github.com/alberttwong/redis-adbc-driver/issues/83), [#101](https://github.com/alberttwong/redis-adbc-driver/issues/101) `SUM` / `AVG` of DOUBLE varied with row order and pushdown mode, and gave `NaN` with `aggregate_pushdown=all` on a cluster | [#107](https://github.com/alberttwong/redis-adbc-driver/pull/107) |
+| [#84](https://github.com/alberttwong/redis-adbc-driver/issues/84), [#88](https://github.com/alberttwong/redis-adbc-driver/issues/88), [#90](https://github.com/alberttwong/redis-adbc-driver/issues/90) Timestamp text kept trailing zeros; no `AT TIME ZONE` / `convert_timezone()`; `to_char` printed `WW`, `J`, … literally (dbt_utils' `generate_surrogate_key`, dbt_date) | [#97](https://github.com/alberttwong/redis-adbc-driver/pull/97) |
+| [#85](https://github.com/alberttwong/redis-adbc-driver/issues/85) Row values, `(k1, k2) IN (…)` (dbt's delete+insert with a list `unique_key`) | [#98](https://github.com/alberttwong/redis-adbc-driver/pull/98) |
+| [#86](https://github.com/alberttwong/redis-adbc-driver/issues/86), [#87](https://github.com/alberttwong/redis-adbc-driver/issues/87), [#94](https://github.com/alberttwong/redis-adbc-driver/issues/94) A 5–10 s client read timeout; a killed `rename_rekey` rename blocked retries; incomplete ACL docs | [#100](https://github.com/alberttwong/redis-adbc-driver/pull/100) |
+| [#89](https://github.com/alberttwong/redis-adbc-driver/issues/89) Trigonometric functions (dbt_utils' `haversine_distance`) | [#107](https://github.com/alberttwong/redis-adbc-driver/pull/107) |
+| [#91](https://github.com/alberttwong/redis-adbc-driver/issues/91), [#92](https://github.com/alberttwong/redis-adbc-driver/issues/92) Multi-action `ALTER TABLE` (`on_schema_change`); `BEGIN` / `COMMIT` / `SET` (hooks outside the transaction) | [#96](https://github.com/alberttwong/redis-adbc-driver/pull/96) |
+| [#93](https://github.com/alberttwong/redis-adbc-driver/issues/93) `VARCHAR(n)` / `CHAR(n)` lengths were ignored | [#95](https://github.com/alberttwong/redis-adbc-driver/pull/95) |
+| [#102](https://github.com/alberttwong/redis-adbc-driver/issues/102) Wrong results: `t.col` inside `(… from t x …)` read the inner row | [#108](https://github.com/alberttwong/redis-adbc-driver/pull/108) |
+| [#103](https://github.com/alberttwong/redis-adbc-driver/issues/103), [#105](https://github.com/alberttwong/redis-adbc-driver/issues/105) Casts to a lower time precision truncated; no session time zone | [#106](https://github.com/alberttwong/redis-adbc-driver/pull/106) |
+| [#104](https://github.com/alberttwong/redis-adbc-driver/issues/104) Data loss: `TRUNCATE … RESTART IDENTITY` during a concurrent write | [#109](https://github.com/alberttwong/redis-adbc-driver/pull/109) |
+| [#110](https://github.com/alberttwong/redis-adbc-driver/issues/110) Rows whose DOUBLE column is `NaN` are written but never returned | Open |
+| [#111](https://github.com/alberttwong/redis-adbc-driver/issues/111) Schema-qualified column references (`s.t.col`) ignore the schema | Open |
+| [#112](https://github.com/alberttwong/redis-adbc-driver/issues/112) `GROUP BY` doesn't reject ungrouped outer columns inside subqueries | Open |
+| [#113](https://github.com/alberttwong/redis-adbc-driver/issues/113) Fractional-second precisions other than 0, 3, 6 and 9 snap to 3, 6 or 9 digits | Open |
 
 ## Known limitations
 
 The driver runs the SQL that dbt and its cross-database macros generate, and
-the dbt features above all work. Three limits come from the design:
+the dbt features above all work. dbt doesn't generate the SQL the open driver
+issues above need. In your own SQL, name columns by alias rather than
+`schema.table.column`
+([driver #111](https://github.com/alberttwong/redis-adbc-driver/issues/111)),
+and keep `NaN` out of DOUBLE columns
+([driver #110](https://github.com/alberttwong/redis-adbc-driver/issues/110)).
+Three limits come from the design:
 
 - **No transactions.** Every statement autocommits, so a run that stops in
   the middle of a materialization can leave a `__dbt_tmp` or `__dbt_backup`
@@ -217,10 +238,13 @@ docker exec redis-dbt-taxi redis-cli FT.INFO idx:raw:yellow_tripdata
 
 Tables built by dbt's rename-swap keep the row key prefix and index of the
 `__dbt_tmp` table they were created as. `ALTER TABLE … RENAME` only changes
-metadata, and the driver never reuses a prefix, so later builds get
-`…__dbt_tmp~2`, `~3` and so on. To keep key names matching the tables, set
-`rename_rekey: true` in `profiles.yml`. Each rename then moves the table's
-rows to its own name's keys, which costs a copy of every row on each build.
+metadata, and the driver never gives a new table a prefix another table had
+(so a dropped or truncated table's leftover keys can't reach it). Each build's
+`__dbt_tmp` therefore gets the next free one: `…__dbt_tmp:`, `…__dbt_tmp~2:`,
+`~3` and so on. To get keys named after the table, set `rename_rekey: true` in
+`profiles.yml`. Each rename then moves the table's rows to keys under its own
+name (`schema:table:` on the first build, `schema:table~N:` after that), which
+costs a copy of every row on each build.
 Either way, a table's current prefix and index are in its metadata:
 
 ```bash
