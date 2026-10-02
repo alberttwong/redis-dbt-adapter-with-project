@@ -1,4 +1,4 @@
-# dbt on Redis: NYC taxi trips
+# dbt Redis adapter with example NYC taxi trips DBT project
 
 A dbt Core project that tests the dbt Redis adapter, which is built on the
 [Redis ADBC driver](https://github.com/alberttwong/redis-adbc-driver). It does
