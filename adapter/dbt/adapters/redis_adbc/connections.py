@@ -40,6 +40,11 @@ class RedisAdbcCredentials(Credentials):
         data.setdefault("database", "redis")
         return data
 
+    @classmethod
+    def validate(cls, data):
+        # dbt validates the profile before __pre_deserialize__ sets the default.
+        super().validate({"database": "redis", **data})
+
     @property
     def type(self) -> str:
         return "redis_adbc"
