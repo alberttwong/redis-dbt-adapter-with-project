@@ -166,7 +166,7 @@ This project installs it with dbt_utils and puts it first in
 
 Profile options (`profiles.yml`): `driver` (the library's path; without an
 extension, the adapter adds `.dylib`, `.so` or `.dll`), `uri`, `username`,
-`password`, `database` (always `redis`), `schema`, `threads`,
+`password`, `database` (optional; always `redis`), `schema`, `threads`,
 `aggregate_pushdown` (`exact` / `all` / `none`), `rename_rekey` (see
 [Looking at the data in Redis](#looking-at-the-data-in-redis)), and:
 

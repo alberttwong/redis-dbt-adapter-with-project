@@ -85,6 +85,11 @@ class RedisAdbcCredentials(Credentials):
                 raise DbtRuntimeError(f"driver_options: {option} must be a string, number or boolean")
         return data
 
+    @classmethod
+    def validate(cls, data):
+        # dbt validates the profile before __pre_deserialize__ sets the default.
+        super().validate({"database": "redis", **data})
+
     @property
     def type(self) -> str:
         return "redis_adbc"
