@@ -145,10 +145,6 @@ class RedisAdbcAdapter(SQLAdapter):
     def date_function(cls) -> str:
         return "current_timestamp"
 
-    @classmethod
-    def is_cancelable(cls) -> bool:
-        return False
-
     # --- type conversion for seeds -------------------------------------------------
 
     @classmethod
