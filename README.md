@@ -72,7 +72,8 @@ Use `make docs-serve` to browse the docs and lineage graph.
 Redis is published on **6380** so it doesn't collide with a local Redis on
 6379. Override the connection with `REDIS_URI` (for example
 `rediss://host:port/0` for Redis Cloud), credentials with `REDIS_USERNAME` and
-`REDIS_PASSWORD`, and the driver location with `REDIS_ADBC_DRIVER`. A password
+`REDIS_PASSWORD`, the session time zone with `REDIS_TIME_ZONE` (UTC by
+default), and the driver location with `REDIS_ADBC_DRIVER`. A password
 in `REDIS_URI` works too; `dbt debug` and the logs show it as `****`. Redis
 Flex (RAM + SSD) databases aren't supported: their Search lacks features every
 table needs, so the driver refuses them when it connects.
@@ -133,7 +134,7 @@ Useful vars (defaults are in `dbt_project.yml`):
 ## What the adapter does
 
 dbt only connects to a database through an adapter package, and there is no
-generic ADBC adapter. `adapter/` is a small one: about 570 lines of Python and
+generic ADBC adapter. `adapter/` is a small one: about 680 lines of Python and
 190 lines of macros. The driver runs the SQL of dbt's default macros and
 materializations, so the adapter covers what isn't SQL:
 
@@ -166,8 +167,30 @@ This project installs it with dbt_utils and puts it first in
 Profile options (`profiles.yml`): `driver` (the library's path; without an
 extension, the adapter adds `.dylib`, `.so` or `.dll`), `uri`, `username`,
 `password`, `database` (optional; always `redis`), `schema`, `threads`,
-`aggregate_pushdown` (`exact` / `all` / `none`), and `rename_rekey` (see
-[Looking at the data in Redis](#looking-at-the-data-in-redis)).
+`aggregate_pushdown` (`exact` / `all` / `none`), `rename_rekey` (see
+[Looking at the data in Redis](#looking-at-the-data-in-redis)), and:
+
+- `time_zone`: the session time zone, for example `America/New_York` (UTC
+  by default). `current_timestamp` shows in it, `localtimestamp` and
+  snapshots' `dbt_valid_from` / `dbt_valid_to` are its local time, and
+  `TIMESTAMP` ↔ `TIMESTAMP WITH TIME ZONE` conversions use it, as on
+  Postgres. Bulk ingest doesn't: a seed's timestamp without an offset in a
+  `TIMESTAMP WITH TIME ZONE` column is read as UTC, where dbt-postgres reads
+  it as local time. Give such values an offset (`2024-01-10 02:00:00-05`),
+  or load them into a `TIMESTAMP` column.
+- `read_timeout` / `write_timeout`: how long the client waits for each reply
+  and to send each command: `30s`, `10m`, a number of seconds, or `0` for no
+  timeout (5 minutes by default). Raise `read_timeout` on a cluster or a
+  busy server.
+- `driver_options`: any other
+  [driver option](https://github.com/alberttwong/redis-adbc-driver#options),
+  passed as is, for example `{adbc.redis.stream_batch_rows: 10000}`. The
+  driver refuses an unknown one when dbt connects. Options that have a
+  profile key of their own (`adbc.redis.time_zone`, `password`, …) must be
+  set with it.
+
+`dbt debug` shows these options. A profile key the adapter doesn't know is
+ignored with a warning.
 
 ## Driver issues found along the way
 

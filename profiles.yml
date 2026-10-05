@@ -11,6 +11,8 @@ nyc_taxi:
       # dbt debug or the logs. Empty means none.
       username: "{{ env_var('REDIS_USERNAME', '') }}"
       password: "{{ env_var('REDIS_PASSWORD', '') }}"
+      # The session time zone, e.g. America/New_York. Empty means UTC.
+      time_zone: "{{ env_var('REDIS_TIME_ZONE', '') }}"
       database: redis
       schema: taxi
       threads: 4

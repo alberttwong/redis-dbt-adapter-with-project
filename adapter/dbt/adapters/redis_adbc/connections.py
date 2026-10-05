@@ -4,7 +4,7 @@ import os
 import sys
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Iterable, Optional, Tuple
+from typing import Any, Dict, Iterable, Optional, Set, Tuple, Union
 from urllib.parse import urlsplit, urlunsplit
 
 import adbc_driver_manager
@@ -16,6 +16,30 @@ from dbt.adapters.events.logging import AdapterLogger
 from dbt.adapters.sql import SQLConnectionManager
 
 logger = AdapterLogger("RedisAdbc")
+
+# Driver options that profile fields set (option -> field), so
+# driver_options can't.
+_PROFILE_OPTIONS = {
+    "uri": "uri",
+    "username": "username",
+    "password": "password",
+    "adbc.redis.default_schema": "schema",
+    "adbc.redis.aggregate_pushdown": "aggregate_pushdown",
+    "adbc.redis.rename_rekey": "rename_rekey",
+    "adbc.redis.time_zone": "time_zone",
+    "adbc.redis.read_timeout": "read_timeout",
+    "adbc.redis.write_timeout": "write_timeout",
+}
+
+# Unknown profile keys already warned about (profiles can load more than once).
+_warned_keys: Set[str] = set()
+
+
+def _option_value(value: Any) -> str:
+    # ADBC options are strings; booleans as the driver spells them.
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
 
 
 @dataclass
@@ -32,12 +56,33 @@ class RedisAdbcCredentials(Credentials):
     # copies every row once more per build, in exchange for key names that
     # match the table's.
     rename_rekey: Optional[bool] = None
+    # The session time zone (adbc.redis.time_zone): what current_timestamp's
+    # text, localtimestamp and TIMESTAMP <-> TIMESTAMP WITH TIME ZONE
+    # conversions use. UTC by default.
+    time_zone: Optional[str] = None
+    # How long the client waits for each reply, and to send each command:
+    # "30s", "10m", a number of seconds, or 0 for no timeout.
+    read_timeout: Optional[Union[str, int]] = None
+    write_timeout: Optional[Union[str, int]] = None
+    # Any other driver option, passed as is (see the driver README's Options).
+    driver_options: Optional[Dict[str, Any]] = None
 
     @classmethod
     def __pre_deserialize__(cls, data):
         data = super().__pre_deserialize__(data)
         # The driver exposes a single catalog named "redis".
         data.setdefault("database", "redis")
+        # dbt accepts profile keys the adapter doesn't have, and drops them.
+        for key in sorted(data.keys() - cls.__dataclass_fields__.keys() - _warned_keys):
+            _warned_keys.add(key)
+            logger.warning(f"`{key}` isn't a redis_adbc profile option; it's ignored")
+        for option, value in (data.get("driver_options") or {}).items():
+            if option in _PROFILE_OPTIONS:
+                raise DbtRuntimeError(
+                    f"driver_options can't set {option}; use the profile's `{_PROFILE_OPTIONS[option]}`"
+                )
+            if not isinstance(value, (str, int, float, bool)):
+                raise DbtRuntimeError(f"driver_options: {option} must be a string, number or boolean")
         return data
 
     @classmethod
@@ -55,7 +100,19 @@ class RedisAdbcCredentials(Credentials):
         return _redact_uri(self.uri, keep_user=False)
 
     def _connection_keys(self) -> Tuple[str, ...]:
-        return ("driver", "uri", "database", "schema", "username", "aggregate_pushdown", "rename_rekey")
+        return (
+            "driver",
+            "uri",
+            "database",
+            "schema",
+            "username",
+            "aggregate_pushdown",
+            "rename_rekey",
+            "time_zone",
+            "read_timeout",
+            "write_timeout",
+            "driver_options",
+        )
 
     def connection_info(self, *, with_aliases: bool = False) -> Iterable[Tuple[str, Any]]:
         # dbt debug prints these and logs them: never the URI's password.
@@ -73,6 +130,16 @@ class RedisAdbcCredentials(Credentials):
         if not os.path.splitext(os.path.basename(path))[1]:
             path += {"darwin": ".dylib", "win32": ".dll"}.get(sys.platform, ".so")
         return path
+
+    def db_kwargs(self) -> Dict[str, str]:
+        """The driver's database options for this profile."""
+        kwargs = {option: _option_value(v) for option, v in (self.driver_options or {}).items()}
+        for option, name in _PROFILE_OPTIONS.items():
+            value = getattr(self, name)
+            # None, or "" from an unset env_var, leaves the driver's default.
+            if value is not None and value != "":
+                kwargs[option] = _option_value(value)
+        return kwargs
 
 
 def _redact_uri(uri: str, keep_user: bool = True) -> str:
@@ -146,18 +213,9 @@ class RedisAdbcConnectionManager(SQLConnectionManager):
         if connection.state == ConnectionState.OPEN:
             return connection
         creds: RedisAdbcCredentials = connection.credentials
-        db_kwargs = {"uri": creds.uri, "adbc.redis.default_schema": creds.schema}
-        if creds.username:
-            db_kwargs["username"] = creds.username
-        if creds.password:
-            db_kwargs["password"] = creds.password
-        if creds.aggregate_pushdown:
-            db_kwargs["adbc.redis.aggregate_pushdown"] = creds.aggregate_pushdown
-        if creds.rename_rekey is not None:
-            db_kwargs["adbc.redis.rename_rekey"] = "true" if creds.rename_rekey else "false"
 
         def connect():
-            conn = dbapi.connect(driver=creds.driver_path(), db_kwargs=db_kwargs, autocommit=True)
+            conn = dbapi.connect(driver=creds.driver_path(), db_kwargs=creds.db_kwargs(), autocommit=True)
             return RedisAdbcHandle(conn)
 
         return cls.retry_connection(

@@ -404,8 +404,9 @@ class RedisAdbcAdapter(SQLAdapter):
 
         Used instead of dbt's batched, parameterized INSERTs because bulk
         ingest is much faster. The driver converts each value to its column's
-        type as an INSERT does (text and timestamps without a zone offset are
-        UTC), so any type dbt created the column with works.
+        type as an INSERT does, except that text and timestamps without a
+        zone offset are UTC whatever the session time zone, so any type dbt
+        created the column with works.
         """
         table = pa.table({name: list(col.values()) for name, col in zip(agate_table.column_names, agate_table.columns)})
         self._ingest(relation, table, mode="append")
