@@ -1087,7 +1087,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dbt-core", specifier = ">=1.10,<2" },
+    { name = "dbt-core", specifier = ">=1.10.8,<2" },
     { name = "dbt-redis-adbc", editable = "adapter" },
 ]
 
