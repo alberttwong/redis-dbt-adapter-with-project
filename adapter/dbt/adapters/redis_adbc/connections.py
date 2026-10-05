@@ -9,6 +9,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import adbc_driver_manager
 import adbc_driver_manager.dbapi as dbapi
+from adbc_driver_manager import AdbcStatusCode
 from dbt_common.exceptions import DbtDatabaseError, DbtRuntimeError
 
 from dbt.adapters.contracts.connection import AdapterResponse, Connection, ConnectionState, Credentials
@@ -182,10 +183,11 @@ class RedisAdbcHandle:
         pass  # no transactions
 
     def cancel(self):
-        """Cancel the statement running on this connection (from another thread).
+        """Cancel the statement running on this connection, or the streamed
+        result it is reading (from another thread). Either then fails with
+        CANCELLED (see exception_handler).
 
-        Idle cursors refuse with INVALID_STATE, and so does a cursor reading
-        a streamed result, which the driver can't cancel yet.
+        A cursor with neither refuses with INVALID_STATE.
         """
         for cur in list(self._cursors):
             if cur._closed:
@@ -193,7 +195,8 @@ class RedisAdbcHandle:
             try:
                 cur.adbc_cancel()
             except adbc_driver_manager.Error as e:
-                logger.debug(f"Redis ADBC cancel: {e}")
+                if e.status_code != AdbcStatusCode.INVALID_STATE:
+                    logger.warning(f"Redis ADBC: cancelling a statement failed: {e}")
 
     def close(self):
         for cur in self._cursors:
@@ -230,6 +233,11 @@ class RedisAdbcConnectionManager(SQLConnectionManager):
         try:
             yield
         except adbc_driver_manager.Error as e:
+            if e.status_code == AdbcStatusCode.CANCELLED:
+                # Cancelled (Ctrl-C, --fail-fast): not the database's error.
+                # A write keeps the rows it wrote before the cancel.
+                logger.debug(f"Redis ADBC: cancelled: {e}")
+                raise DbtRuntimeError(str(e).strip()) from e
             logger.debug(f"Redis ADBC error: {e}")
             raise DbtDatabaseError(str(e).strip()) from e
         except Exception as e:
