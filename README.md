@@ -34,7 +34,7 @@ make setup
 
 - runs `uv sync` and `dbt deps` (dbt_utils, and the local `redis_adbc_utils`)
 - puts the driver in `driver/`: the prebuilt library from the pinned
-  release (`v0.0.11`, in `scripts/driver-version`), after checking its SHA-256.
+  release (`v0.0.12`, in `scripts/driver-version`), after checking its SHA-256.
   Where the release has no build (another platform, or `DRIVER_VERSION` set
   to a commit) it builds the driver from source instead; `make driver-build`
   always does
@@ -140,7 +140,7 @@ materializations, so the adapter covers what isn't SQL:
 
 | Area | Adapter |
 |-|-|
-| Connection | `adbc_driver_manager` DB-API, autocommit. The driver has no transactions: it accepts dbt's `BEGIN`/`COMMIT` as no-ops, and a `SET LOCAL` lasts until the model's `COMMIT`, as on Postgres. Results over 65,536 rows stream from the driver, so an error in a later batch is raised as dbt reads the rows; the adapter reports it as a database error, like one from the query. Ctrl-C and `--fail-fast` cancel the running statements (ADBC `StatementCancel`) |
+| Connection | `adbc_driver_manager` DB-API, autocommit. The driver has no transactions: it accepts dbt's `BEGIN`/`COMMIT` as no-ops, and a `SET LOCAL` lasts until the model's `COMMIT`, as on Postgres. Results over 65,536 rows stream from the driver, so an error in a later batch is raised as dbt reads the rows; the adapter reports it as a database error, like one from the query. Ctrl-C and `--fail-fast` cancel the running statements and streamed results (ADBC `StatementCancel`); each fails with `CANCELLED`, which the adapter reports as a runtime error rather than a database error |
 | Metadata | Relations, columns and the docs catalog come from ADBC `GetObjects`; table comments come from `information_schema.tables`. Relations are matched with their case, since the driver keeps schema and table names as written (`alias='MyTable'` works). Column types are parsed as dbt-postgres reports them (`numeric` with precision and scale, `character varying` with its length) |
 | `persist_docs` | Descriptions are stored with `COMMENT ON TABLE` / `VIEW` / `COLUMN`; the marts turn it on |
 | `grants` | Skipped with a warning (see [Known limitations](#known-limitations)) |
@@ -174,10 +174,8 @@ extension, the adapter adds `.dylib`, `.so` or `.dll`), `uri`, `username`,
   by default). `current_timestamp` shows in it, `localtimestamp` and
   snapshots' `dbt_valid_from` / `dbt_valid_to` are its local time, and
   `TIMESTAMP` ↔ `TIMESTAMP WITH TIME ZONE` conversions use it, as on
-  Postgres. Bulk ingest doesn't: a seed's timestamp without an offset in a
-  `TIMESTAMP WITH TIME ZONE` column is read as UTC, where dbt-postgres reads
-  it as local time. Give such values an offset (`2024-01-10 02:00:00-05`),
-  or load them into a `TIMESTAMP` column.
+  Postgres. So do seeds: a timestamp without an offset in a
+  `TIMESTAMP WITH TIME ZONE` column is a local time, as on dbt-postgres.
 - `read_timeout` / `write_timeout`: how long the client waits for each reply
   and to send each command: `30s`, `10m`, a number of seconds, or `0` for no
   timeout (5 minutes by default). Raise `read_timeout` on a cluster or a
@@ -196,7 +194,7 @@ ignored with a warning.
 
 Building this project turned up these issues, all filed on
 [alberttwong/redis-adbc-driver](https://github.com/alberttwong/redis-adbc-driver/issues).
-All of them are fixed in the pinned driver, v0.0.11.
+All of them are fixed in the pinned driver, v0.0.12.
 
 | Issue | Fixed in |
 |-|-|
@@ -240,6 +238,8 @@ All of them are fixed in the pinned driver, v0.0.11.
 | [#111](https://github.com/alberttwong/redis-adbc-driver/issues/111) Wrong results: schema-qualified column references (`s.t.col`) ignored the schema | [#115](https://github.com/alberttwong/redis-adbc-driver/pull/115) |
 | [#112](https://github.com/alberttwong/redis-adbc-driver/issues/112) `GROUP BY` didn't reject ungrouped outer columns inside subqueries | [#117](https://github.com/alberttwong/redis-adbc-driver/pull/117) |
 | [#113](https://github.com/alberttwong/redis-adbc-driver/issues/113) Fractional-second precisions other than 0, 3, 6 and 9 snapped to 3, 6 or 9 digits | [#118](https://github.com/alberttwong/redis-adbc-driver/pull/118) |
+| [#150](https://github.com/alberttwong/redis-adbc-driver/issues/150) A cancel didn't stop work the driver does in memory (Ctrl-C lagged by a whole join), and was reported as `IO` | [#152](https://github.com/alberttwong/redis-adbc-driver/pull/152) |
+| [#151](https://github.com/alberttwong/redis-adbc-driver/issues/151) Seeds (bulk ingest) read timestamps without an offset as UTC in a non-UTC session | [#153](https://github.com/alberttwong/redis-adbc-driver/pull/153) |
 
 ## Known limitations
 
@@ -252,15 +252,12 @@ the dbt features above all work. Three limits come from the design:
   model. The run's temporary tables (`pg_temp_N`) stay until the driver's
   2-minute heartbeat for that connection runs out; the next connection then
   removes them. Ctrl-C and `--fail-fast` cancel the running statements,
-  which leaves the same kind of remains: each statement stops at its next
-  Redis command, and the rows it already wrote stay until the next run
-  drops its relation. A cancelled `rename_rekey` rename leaves the table as
-  it was. Two things don't stop early: work the driver does in memory (a
-  join, say) runs until it next calls Redis
-  ([driver #150](https://github.com/alberttwong/redis-adbc-driver/issues/150)),
-  and v0.0.11 reads a streamed `dbt show` result to the end
-  ([driver #142](https://github.com/alberttwong/redis-adbc-driver/issues/142),
-  fixed after v0.0.11).
+  which leaves the same kind of remains. Each fails with `CANCELLED`: work
+  the driver does in memory (a join, say) stops within milliseconds, and a
+  Redis command or a streamed `dbt show` result once the reply it waits
+  for arrives. A statement that was writing keeps the rows it already
+  wrote until the next run drops its relation. A cancelled `rename_rekey`
+  rename leaves the table as it was.
 - **SQL models only.** dbt Python models aren't supported, and neither are
   materialized views (`materialized='materialized_view'` stops with a clear
   error).
