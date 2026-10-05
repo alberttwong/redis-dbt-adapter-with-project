@@ -233,9 +233,11 @@ the dbt features above all work. Three limits come from the design:
   Redis command, and the rows it already wrote stay until the next run
   drops its relation. A cancelled `rename_rekey` rename leaves the table as
   it was. Two things don't stop early: work the driver does in memory (a
-  join, say) runs until it next calls Redis, and a streamed `dbt show`
-  result is read to the end
-  ([driver #142](https://github.com/alberttwong/redis-adbc-driver/issues/142)).
+  join, say) runs until it next calls Redis
+  ([driver #150](https://github.com/alberttwong/redis-adbc-driver/issues/150)),
+  and v0.0.11 reads a streamed `dbt show` result to the end
+  ([driver #142](https://github.com/alberttwong/redis-adbc-driver/issues/142),
+  fixed after v0.0.11).
 - **SQL models only.** dbt Python models aren't supported, and neither are
   materialized views (`materialized='materialized_view'` stops with a clear
   error).
