@@ -160,6 +160,13 @@ class RedisAdbcConnectionManager(SQLConnectionManager):
                 raise
             raise DbtRuntimeError(str(e)) from e
 
+    def execute(self, sql: str, auto_begin: bool = False, fetch: bool = False, limit: Optional[int] = None):
+        # The driver streams a long result (over 65,536 rows), so an error
+        # past its first batch comes from fetching the rows, which dbt does
+        # outside add_query's exception_handler.
+        with self.exception_handler(sql):
+            return super().execute(sql, auto_begin=auto_begin, fetch=fetch, limit=limit)
+
     def cancel(self, connection: Connection):
         pass  # the driver doesn't support cancellation
 
