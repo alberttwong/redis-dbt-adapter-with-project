@@ -109,6 +109,20 @@ class RedisAdbcHandle:
     def rollback(self):
         pass  # no transactions
 
+    def cancel(self):
+        """Cancel the statement running on this connection (from another thread).
+
+        Idle cursors refuse with INVALID_STATE, and so does a cursor reading
+        a streamed result, which the driver can't cancel yet.
+        """
+        for cur in list(self._cursors):
+            if cur._closed:
+                continue
+            try:
+                cur.adbc_cancel()
+            except adbc_driver_manager.Error as e:
+                logger.debug(f"Redis ADBC cancel: {e}")
+
     def close(self):
         for cur in self._cursors:
             try:
@@ -168,7 +182,8 @@ class RedisAdbcConnectionManager(SQLConnectionManager):
             return super().execute(sql, auto_begin=auto_begin, fetch=fetch, limit=limit)
 
     def cancel(self, connection: Connection):
-        pass  # the driver doesn't support cancellation
+        # dbt calls this from the main thread on Ctrl-C and --fail-fast.
+        connection.handle.cancel()
 
     @classmethod
     def get_response(cls, cursor: Any) -> AdapterResponse:

@@ -139,7 +139,7 @@ materializations, so the adapter covers what isn't SQL:
 
 | Area | Adapter |
 |-|-|
-| Connection | `adbc_driver_manager` DB-API, autocommit. The driver has no transactions: it accepts dbt's `BEGIN`/`COMMIT` as no-ops, and a `SET LOCAL` lasts until the model's `COMMIT`, as on Postgres. Results over 65,536 rows stream from the driver, so an error in a later batch is raised as dbt reads the rows; the adapter reports it as a database error, like one from the query |
+| Connection | `adbc_driver_manager` DB-API, autocommit. The driver has no transactions: it accepts dbt's `BEGIN`/`COMMIT` as no-ops, and a `SET LOCAL` lasts until the model's `COMMIT`, as on Postgres. Results over 65,536 rows stream from the driver, so an error in a later batch is raised as dbt reads the rows; the adapter reports it as a database error, like one from the query. Ctrl-C and `--fail-fast` cancel the running statements (ADBC `StatementCancel`) |
 | Metadata | Relations, columns and the docs catalog come from ADBC `GetObjects`; table comments come from `information_schema.tables`. Relations are matched with their case, since the driver keeps schema and table names as written (`alias='MyTable'` works). Column types are parsed as dbt-postgres reports them (`numeric` with precision and scale, `character varying` with its length) |
 | `persist_docs` | Descriptions are stored with `COMMENT ON TABLE` / `VIEW` / `COLUMN`; the marts turn it on |
 | `grants` | Skipped with a warning (see [Known limitations](#known-limitations)) |
@@ -228,7 +228,14 @@ the dbt features above all work. Three limits come from the design:
   relation behind. dbt drops those at the start of the next run of that
   model. The run's temporary tables (`pg_temp_N`) stay until the driver's
   2-minute heartbeat for that connection runs out; the next connection then
-  removes them.
+  removes them. Ctrl-C and `--fail-fast` cancel the running statements,
+  which leaves the same kind of remains: each statement stops at its next
+  Redis command, and the rows it already wrote stay until the next run
+  drops its relation. A cancelled `rename_rekey` rename leaves the table as
+  it was. Two things don't stop early: work the driver does in memory (a
+  join, say) runs until it next calls Redis, and a streamed `dbt show`
+  result is read to the end
+  ([driver #142](https://github.com/alberttwong/redis-adbc-driver/issues/142)).
 - **SQL models only.** dbt Python models aren't supported, and neither are
   materialized views (`materialized='materialized_view'` stops with a clear
   error).
