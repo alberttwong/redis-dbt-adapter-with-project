@@ -39,8 +39,9 @@
   {{ return(adapter.get_columns_in_relation(relation)) }}
 {%- endmacro %}
 
-{#- Snapshot validity timestamps without a time zone (UTC), as on Postgres,
-    so they compare with the usual TIMESTAMP updated_at columns. -#}
+{#- Snapshot validity timestamps without a time zone: the local time in the
+    session time zone (the profile's time_zone, UTC by default), as on
+    Postgres, so they compare with the usual TIMESTAMP updated_at columns. -#}
 {% macro redis_adbc__snapshot_get_time() -%}
   localtimestamp
 {%- endmacro %}
