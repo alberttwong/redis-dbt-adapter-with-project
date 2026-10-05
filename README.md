@@ -34,7 +34,7 @@ make setup
 
 - runs `uv sync` and `dbt deps` (dbt_utils, and the local `redis_adbc_utils`)
 - puts the driver in `driver/`: the prebuilt library from the pinned
-  release (`v0.0.8`, in `scripts/driver-version`), after checking its SHA-256.
+  release (`v0.0.11`, in `scripts/driver-version`), after checking its SHA-256.
   Where the release has no build (another platform, or `DRIVER_VERSION` set
   to a commit) it builds the driver from source instead; `make driver-build`
   always does
@@ -139,7 +139,7 @@ materializations, so the adapter covers what isn't SQL:
 
 | Area | Adapter |
 |-|-|
-| Connection | `adbc_driver_manager` DB-API, autocommit. The driver has no transactions: it accepts dbt's `BEGIN`/`COMMIT` as no-ops, and a `SET LOCAL` lasts until the model's `COMMIT`, as on Postgres |
+| Connection | `adbc_driver_manager` DB-API, autocommit. The driver has no transactions: it accepts dbt's `BEGIN`/`COMMIT` as no-ops, and a `SET LOCAL` lasts until the model's `COMMIT`, as on Postgres. Results over 65,536 rows stream from the driver, so an error in a later batch is raised as dbt reads the rows; the adapter reports it as a database error, like one from the query |
 | Metadata | Relations, columns and the docs catalog come from ADBC `GetObjects`; table comments come from `information_schema.tables`. Relations are matched with their case, since the driver keeps schema and table names as written (`alias='MyTable'` works). Column types are parsed as dbt-postgres reports them (`numeric` with precision and scale, `character varying` with its length) |
 | `persist_docs` | Descriptions are stored with `COMMENT ON TABLE` / `VIEW` / `COLUMN`; the marts turn it on |
 | `grants` | Skipped with a warning (see [Known limitations](#known-limitations)) |
@@ -173,7 +173,7 @@ extension, the adapter adds `.dylib`, `.so` or `.dll`), `uri`, `username`,
 
 Building this project turned up these issues, all filed on
 [alberttwong/redis-adbc-driver](https://github.com/alberttwong/redis-adbc-driver/issues).
-All but the last four are fixed in the pinned driver, v0.0.8.
+All of them are fixed in the pinned driver, v0.0.11.
 
 | Issue | Fixed in |
 |-|-|
@@ -213,21 +213,15 @@ All but the last four are fixed in the pinned driver, v0.0.8.
 | [#102](https://github.com/alberttwong/redis-adbc-driver/issues/102) Wrong results: `t.col` inside `(… from t x …)` read the inner row | [#108](https://github.com/alberttwong/redis-adbc-driver/pull/108) |
 | [#103](https://github.com/alberttwong/redis-adbc-driver/issues/103), [#105](https://github.com/alberttwong/redis-adbc-driver/issues/105) Casts to a lower time precision truncated; no session time zone | [#106](https://github.com/alberttwong/redis-adbc-driver/pull/106) |
 | [#104](https://github.com/alberttwong/redis-adbc-driver/issues/104) Data loss: `TRUNCATE … RESTART IDENTITY` during a concurrent write | [#109](https://github.com/alberttwong/redis-adbc-driver/pull/109) |
-| [#110](https://github.com/alberttwong/redis-adbc-driver/issues/110) Rows whose DOUBLE column is `NaN` are written but never returned | Open |
-| [#111](https://github.com/alberttwong/redis-adbc-driver/issues/111) Schema-qualified column references (`s.t.col`) ignore the schema | Open |
-| [#112](https://github.com/alberttwong/redis-adbc-driver/issues/112) `GROUP BY` doesn't reject ungrouped outer columns inside subqueries | Open |
-| [#113](https://github.com/alberttwong/redis-adbc-driver/issues/113) Fractional-second precisions other than 0, 3, 6 and 9 snap to 3, 6 or 9 digits | Open |
+| [#110](https://github.com/alberttwong/redis-adbc-driver/issues/110) Rows whose DOUBLE column is `NaN` were written but never returned | [#116](https://github.com/alberttwong/redis-adbc-driver/pull/116) |
+| [#111](https://github.com/alberttwong/redis-adbc-driver/issues/111) Wrong results: schema-qualified column references (`s.t.col`) ignored the schema | [#115](https://github.com/alberttwong/redis-adbc-driver/pull/115) |
+| [#112](https://github.com/alberttwong/redis-adbc-driver/issues/112) `GROUP BY` didn't reject ungrouped outer columns inside subqueries | [#117](https://github.com/alberttwong/redis-adbc-driver/pull/117) |
+| [#113](https://github.com/alberttwong/redis-adbc-driver/issues/113) Fractional-second precisions other than 0, 3, 6 and 9 snapped to 3, 6 or 9 digits | [#118](https://github.com/alberttwong/redis-adbc-driver/pull/118) |
 
 ## Known limitations
 
 The driver runs the SQL that dbt and its cross-database macros generate, and
-the dbt features above all work. dbt doesn't generate the SQL the open driver
-issues above need. In your own SQL, name columns by alias rather than
-`schema.table.column`
-([driver #111](https://github.com/alberttwong/redis-adbc-driver/issues/111)),
-and keep `NaN` out of DOUBLE columns
-([driver #110](https://github.com/alberttwong/redis-adbc-driver/issues/110)).
-Three limits come from the design:
+the dbt features above all work. Three limits come from the design:
 
 - **No transactions.** Every statement autocommits, so a run that stops in
   the middle of a materialization can leave a `__dbt_tmp` or `__dbt_backup`
@@ -271,7 +265,10 @@ Tables built by dbt's rename-swap keep the row key prefix and index of the
 metadata, and the driver never gives a new table a prefix another table had
 (so a dropped or truncated table's leftover keys can't reach it). Each build's
 `__dbt_tmp` therefore gets the next free one: `…__dbt_tmp:`, `…__dbt_tmp~2:`,
-`~3` and so on. To get keys named after the table, set `rename_rekey: true` in
+`~3` and so on. A table also takes the next names when an index the driver
+didn't create already has its index's name (an application's
+`idx:taxi:users`, say), and leaves that index and its HASHes alone. To get
+keys named after the table, set `rename_rekey: true` in
 `profiles.yml`. Each rename then moves the table's rows to keys under its own
 name (`schema:table:` on the first build, `schema:table~N:` after that). For a
 rebuilt table that costs one copy of its new rows: the adapter drops the old
