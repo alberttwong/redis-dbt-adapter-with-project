@@ -50,3 +50,23 @@
 {% macro redis_adbc__list_relations_without_caching(schema_relation) -%}
   {{ return(adapter.list_relations_table(schema_relation)) }}
 {%- endmacro %}
+
+{#- dbt's default is current_timestamp::timestamp, the session time zone's
+    local time (the profile's time_zone); this one is in UTC, as on
+    Postgres. -#}
+{% macro redis_adbc__current_timestamp_in_utc_backcompat() -%}
+  (current_timestamp at time zone 'utc')::timestamp
+{%- endmacro %}
+
+{#- adapter.validate_sql (dbt Cloud's SQL validation; dbt-core doesn't call
+    it). The driver has no EXPLAIN, but it plans a query that can't return a
+    row without reading any, and that checks the names, types and functions
+    the SQL uses. -#}
+{% macro redis_adbc__validate_sql(sql) -%}
+  {% call statement('validate_sql') -%}
+    select * from (
+      {{ sql }}
+    ) as dbt_validate_sql where false limit 0
+  {%- endcall %}
+  {{ return(load_result('validate_sql')) }}
+{%- endmacro %}
