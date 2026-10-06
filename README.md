@@ -113,11 +113,56 @@ request and push to `main`, against Redis 8.6.2 and the pinned driver:
 Python 3.10 and 3.13, each with the locked versions and with the oldest ones
 the `pyproject.toml` files allow: dbt-core 1.10.8 (the first 1.10 release
 that accepts the `arguments:` the tests are written with), dbt-adapters 1.16,
-adbc-driver-manager 1.6 and pyarrow 18. Each run takes about 3 minutes.
+adbc-driver-manager 1.6 and pyarrow 18. Each run takes 3–5 minutes.
 
-Nightly, the same runs against the driver's latest release, so a driver change
+CI also runs [dbt's adapter test suite](#dbts-adapter-test-suite) on Python
+3.10 and 3.13, with the locked versions only: dbt-tests-adapter needs newer
+dbt packages than the oldest ones.
+
+Nightly, all of it runs against the driver's latest release, so a driver change
 that breaks the project shows up before the pin is bumped. To test another
 release or a driver commit, run the workflow by hand with `driver_version`.
+
+## dbt's adapter test suite
+
+The project tests the dbt features it uses. [`adapter/tests/functional/`](adapter/tests/functional)
+runs dbt Labs' [`dbt-tests-adapter`](https://github.com/dbt-labs/dbt-adapters/tree/main/dbt-tests-adapter)
+suite, which other adapters run too, against the adapter. That covers the rest:
+- ephemeral models
+- model, seed, snapshot and run hooks
+- `dbt clone` and `dbt retry`
+- `--store-failures` and `--sample`
+- both snapshot strategies and their `hard_deletes` modes
+- `on_schema_change` and `incremental_predicates`
+- contracts and constraints
+- every cross-database macro
+- `persist_docs`, unit tests, query comments, relation caching and concurrency
+
+```bash
+make adapter-tests
+```
+
+It runs `uv run pytest -n 4` against `REDIS_URI` (the same variables as the
+project). Each test class creates its own schemas and drops them afterwards,
+but use a scratch Redis anyway. It takes about a minute.
+
+Where a test's fixture is Postgres SQL, the test module overrides the fixture,
+not the adapter. For example:
+- a contract on `select 1 as id` declares `bigint`, the driver's type for an
+  integer literal (Postgres's is `integer`);
+- dates are ISO, not `'09/01/2023'`;
+- relations render as `schema.table`.
+
+Skipped, with the reason in the test:
+- grants and materialized views
+- zero-copy `dbt clone` (dbt clone creates views)
+- arrays
+- Python models ([#52](https://github.com/alberttwong/redis-dbt-adapter-with-project/issues/52))
+- backslash escapes (standard SQL strings, as dbt-postgres skips)
+- `get_catalog_for_single_relation`, which dbt-core never calls
+
+Tests that fail on an open driver issue are strict xfails, listed in
+`conftest.py`, so CI fails once a driver release fixes them.
 
 ## Project layout
 
@@ -136,7 +181,8 @@ macros/           load_raw_trips and rename_zone (run-operations), day_part
 tests/            generic (non_negative, in_range) and singular tests, including dbt's
                   cross-database macros
 analyses/         top_pickup_zones_by_day_part
-adapter/          the dbt-redis-adbc adapter package (installed editable by uv)
+adapter/          the dbt-redis-adbc adapter package (installed editable by uv), and
+                  tests/functional: dbt's adapter test suite
 redis_adbc_utils/ redis_adbc__ overrides for dbt_utils, dbt_date and dbt_expectations macros
 scripts/          download_driver.sh, build_driver.sh, driver-version, download_data.sh,
                   ci_check.py (CI's checks)
@@ -157,8 +203,8 @@ Useful vars (defaults are in `dbt_project.yml`):
 ## What the adapter does
 
 dbt only connects to a database through an adapter package, and there is no
-generic ADBC adapter. `adapter/` is a small one: about 680 lines of Python and
-190 lines of macros. The driver runs the SQL of dbt's default macros and
+generic ADBC adapter. `adapter/` is a small one: about 690 lines of Python and
+210 lines of macros. The driver runs the SQL of dbt's default macros and
 materializations, so the adapter covers what isn't SQL:
 
 | Area | Adapter |
@@ -173,7 +219,7 @@ materializations, so the adapter covers what isn't SQL:
 | Loading | Seeds and the raw CSV go through Arrow bulk ingest, which is much faster than INSERTs. The driver converts each seed value to its column's type as an INSERT would, and supplies the Arrow type for each of the raw CSV's SQL column types |
 | Cross-database macros | dbt-core's defaults work natively except two: `safe_cast` uses the driver's `TRY_CAST`, and `listagg` with `limit_num` raises a clear error (it needs arrays). `tests/assert_cross_db_macros.sql` checks them all |
 | Model contracts | An enforced contract creates the table from its DDL, then inserts the rows (as on dbt-postgres). `not_null` and `check` are enforced by the driver; `primary_key`, `unique` and `foreign_key` are accepted but not enforced (dbt warns) |
-| Small dialect bits | `?` bind parameters, `CURRENT_TIMESTAMP`, a subquery wrapper for `dbt show --limit`, and no alias on the subqueries `--empty` and microbatch put around refs, so a model's own alias (`from {{ ref('x') }} z`) still works |
+| Small dialect bits | `?` bind parameters, `CURRENT_TIMESTAMP` (and `current_timestamp_in_utc_backcompat` in UTC, which dbt's default isn't in a non-UTC session), `validate_sql` with a query that can't return rows (the driver has no `EXPLAIN`), a subquery wrapper for `dbt show --limit`, and no alias on the subqueries `--empty` and microbatch put around refs, so a model's own alias (`from {{ ref('x') }} z`) still works |
 
 **Packages.** dbt looks for a package macro's adapter variants only in the
 root project and the package itself, so the adapter can't fix a package's
@@ -217,7 +263,7 @@ ignored with a warning.
 
 Building this project turned up these issues, all filed on
 [alberttwong/redis-adbc-driver](https://github.com/alberttwong/redis-adbc-driver/issues).
-All of them are fixed in the pinned driver, v0.0.12.
+All of them are fixed in the pinned driver, v0.0.12, except the two below.
 
 | Issue | Fixed in |
 |-|-|
@@ -263,6 +309,16 @@ All of them are fixed in the pinned driver, v0.0.12.
 | [#113](https://github.com/alberttwong/redis-adbc-driver/issues/113) Fractional-second precisions other than 0, 3, 6 and 9 snapped to 3, 6 or 9 digits | [#118](https://github.com/alberttwong/redis-adbc-driver/pull/118) |
 | [#150](https://github.com/alberttwong/redis-adbc-driver/issues/150) A cancel didn't stop work the driver does in memory (Ctrl-C lagged by a whole join), and was reported as `IO` | [#152](https://github.com/alberttwong/redis-adbc-driver/pull/152) |
 | [#151](https://github.com/alberttwong/redis-adbc-driver/issues/151) Seeds (bulk ingest) read timestamps without an offset as UTC in a non-UTC session | [#153](https://github.com/alberttwong/redis-adbc-driver/pull/153) |
+
+dbt's adapter test suite found two more, still open:
+
+- [#187](https://github.com/alberttwong/redis-adbc-driver/issues/187): `UNION`
+  doesn't resolve column types as Postgres does. A string literal doesn't
+  take the other branch's type, and `DATE` doesn't combine with `TIMESTAMP`.
+  So a timestamp-strategy snapshot with a `DATE` `updated_at` that tracks hard
+  deletes fails from its second run.
+- [#188](https://github.com/alberttwong/redis-adbc-driver/issues/188): no
+  `date(x)`. Use `cast(x as date)`.
 
 ## Known limitations
 

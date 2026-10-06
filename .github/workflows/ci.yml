@@ -28,6 +28,10 @@ jobs:
     name: project (Python ${{ matrix.python }}, ${{ matrix.versions }} dbt)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      # Without the dev group (dbt-tests-adapter, pytest), which needs a newer
+      # dbt-common than the oldest dbt-core allows.
+      UV_NO_DEV: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -122,4 +126,62 @@ jobs:
           path: |
             logs/
             target/run_results.json
+          if-no-files-found: ignore
+
+  # dbt's adapter test suite, on the locked versions only: dbt-tests-adapter
+  # needs newer dbt packages than the oldest ones.
+  adapter-tests:
+    name: adapter tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.13"]
+    services:
+      redis:
+        image: redis:8.6.2
+        ports: ["6380:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.2.0 # no major-version tags
+        with:
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+
+      - name: Install the dependencies
+        run: uv sync --locked
+
+      - name: Choose the latest driver release
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED: ${{ inputs.driver_version }}
+        run: |
+          version="${REQUESTED:-$(gh release view --repo alberttwong/redis-adbc-driver --json tagName --jq .tagName)}"
+          echo "DRIVER_VERSION=${version}" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-go@v7
+        if: inputs.driver_version != ''
+        with:
+          go-version: "1.26"
+
+      - name: Download the driver
+        run: make driver
+
+      - name: make adapter-tests
+        run: make adapter-tests
+
+      - name: Upload the dbt logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: adapter-tests-logs-${{ matrix.python }}
+          path: logs/
           if-no-files-found: ignore

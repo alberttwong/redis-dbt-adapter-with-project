@@ -8,8 +8,22 @@ dependencies = [
     "dbt-redis-adbc",
 ]
 
+# dbt's adapter test suite (adapter/tests/functional): uv run pytest
+[dependency-groups]
+dev = [
+    "dbt-tests-adapter>=1.20,<2",
+    "pytest>=8",
+    "pytest-xdist>=3",
+]
+
 [tool.uv]
 package = false
 
 [tool.uv.sources]
 dbt-redis-adbc = { path = "adapter", editable = true }
+
+[tool.pytest.ini_options]
+testpaths = ["adapter/tests/functional"]
+addopts = "--strict-markers"
+# The suite's own fixtures, not ours.
+filterwarnings = ["ignore:Class-scoped fixture defined as instance method:pytest.PytestRemovedIn10Warning"]

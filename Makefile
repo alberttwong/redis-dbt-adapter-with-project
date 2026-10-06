@@ -4,7 +4,7 @@ DBT := uv run dbt
 # to check the numbers (scripts/ci_check.py).
 SHOW_FLAGS ?=
 
-.PHONY: setup redis-up redis-down driver driver-build data deps debug seed load run test build snapshot incremental-demo snapshot-demo microbatch-demo docs docs-serve clean all
+.PHONY: setup redis-up redis-down driver driver-build data deps debug seed load run test build snapshot incremental-demo snapshot-demo microbatch-demo adapter-tests docs docs-serve clean all
 
 ## One-time setup: Python env, driver, data, Redis
 setup: deps driver data redis-up
@@ -83,6 +83,11 @@ microbatch-demo:
 	$(DBT) run -s fct_trips_microbatch --vars '{microbatch_demo: true}' --full-refresh --event-time-start 2019-01-01 --event-time-end 2019-01-04
 	$(DBT) run -s fct_trips_microbatch --vars '{microbatch_demo: true}' --event-time-start 2019-01-02 --event-time-end 2019-01-03
 	$(DBT) show $(SHOW_FLAGS) --vars '{microbatch_demo: true}' --inline "select pickup_date, count(*) as trips from {{ ref('fct_trips_microbatch') }} group by pickup_date order by pickup_date"
+
+# dbt's adapter test suite (adapter/tests/functional): each test class makes
+# and drops its own schemas in REDIS_URI's database.
+adapter-tests:
+	uv run pytest -n 4
 
 docs:
 	$(DBT) docs generate
