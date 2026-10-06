@@ -1,4 +1,4 @@
-# dbt Redis adapter with example NYC taxi trips DBT project
+# dbt Redis adapter: NYC taxi example project
 
 [![CI](https://github.com/alberttwong/redis-dbt-adapter-with-project/actions/workflows/ci.yml/badge.svg)](https://github.com/alberttwong/redis-dbt-adapter-with-project/actions/workflows/ci.yml)
 
@@ -22,11 +22,26 @@ dbt  ──►  dbt-redis-adbc (adapter/)  ──►  adbc_driver_manager  ─�
           Python + Jinja                  ADBC DB-API              SQL → FT.AGGREGATE / HASH
 ```
 
+## Contents
+
+- [Quick start](#quick-start)
+- [Project guide](#project-guide)
+- [Validation and testing](#validation-and-testing)
+- [Repository reference](#repository-reference)
+- [Adapter reference](#adapter-reference)
+- [Compatibility and limitations](#compatibility-and-limitations)
+- [Redis operations](#redis-operations)
+- [Data source](#data-source)
+
 ## Quick start
 
-Requirements: Docker, [uv](https://docs.astral.sh/uv/) (it provides Python
+### Requirements
+
+You need Docker, [uv](https://docs.astral.sh/uv/) (it provides Python
 3.10–3.13 for dbt), and network access to hub.getdbt.com for `dbt deps`. Building the driver from source also needs Go 1.26+ and a
 C toolchain; on macOS arm64 and Linux (x86-64, arm64) the prebuilt one is used.
+
+### Set up the environment
 
 ```bash
 make setup
@@ -43,12 +58,16 @@ make setup
 - downloads the CSV into `data/`
 - starts Redis **8.6.2**, the version Redis Cloud runs, on port 6380
 
+### Build the project
+
 ```bash
 make all
 ```
 
 `make all` runs `dbt debug`, `seed`, `run-operation load_raw_trips`, `build`
 and `docs generate`. Three demos show what happens across runs.
+
+### Run the demos
 
 Load the first half of January, then the rest: `fct_trips` merges the new trips, and `agg_zone_daily` replaces the zone-days they touch (delete+insert on a composite key):
 
@@ -71,6 +90,8 @@ make microbatch-demo
 
 Use `make docs-serve` to browse the docs and lineage graph.
 
+### Configure the connection
+
 Redis is published on **6380** so it doesn't collide with a local Redis on
 6379. Override the connection with `REDIS_URI` (for example
 `rediss://host:port/0` for Redis Cloud), credentials with `REDIS_USERNAME` and
@@ -80,7 +101,9 @@ in `REDIS_URI` works too; `dbt debug` and the logs show it as `****`. Redis
 Flex (RAM + SSD) databases aren't supported: their Search lacks features every
 table needs, so the driver refuses them when it connects.
 
-## dbt commands this project exercises
+## Project guide
+
+### dbt command coverage
 
 | Command | What happens in Redis |
 |-|-|
@@ -99,7 +122,9 @@ A clean `make all` takes 1.5–2 minutes on a laptop. It ends with 82 passes and
 **intended** warning: the source test flags a $623,261.66 fare in the raw
 data, which staging filters out.
 
-## CI
+## Validation and testing
+
+### Continuous integration
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every pull
 request and push to `main`, against Redis 8.6.2 and the pinned driver:
@@ -123,7 +148,7 @@ Nightly, all of it runs against the driver's latest release, so a driver change
 that breaks the project shows up before the pin is bumped. To test another
 release or a driver commit, run the workflow by hand with `driver_version`.
 
-## dbt's adapter test suite
+### dbt's adapter test suite
 
 The project tests the dbt features it uses. [`adapter/tests/functional/`](adapter/tests/functional)
 runs dbt Labs' [`dbt-tests-adapter`](https://github.com/dbt-labs/dbt-adapters/tree/main/dbt-tests-adapter)
@@ -164,7 +189,9 @@ Skipped, with the reason in the test:
 Tests that fail on an open driver issue are strict xfails, listed in
 `conftest.py`, so CI fails once a driver release fixes them.
 
-## Project layout
+## Repository reference
+
+### Project layout
 
 ```
 models/
@@ -189,6 +216,8 @@ scripts/          download_driver.sh, build_driver.sh, driver-version, download_
                   ci_check.py (CI's checks)
 ```
 
+### Project variables
+
 Useful vars (defaults are in `dbt_project.yml`):
 
 | Var | Default | Meaning |
@@ -201,7 +230,9 @@ Useful vars (defaults are in `dbt_project.yml`):
 | `top_zones_per_borough` | `3` | Zones kept per borough by `agg_top_pickup_zones` |
 | `microbatch_demo` | `false` | Enables `fct_trips_microbatch` |
 
-## What the adapter does
+## Adapter reference
+
+### Responsibilities
 
 dbt only connects to a database through an adapter package, and there is no
 generic ADBC adapter. `adapter/` is a small one: about 780 lines of Python and
@@ -223,7 +254,9 @@ materializations, so the adapter covers what isn't SQL:
 | Model contracts | An enforced contract creates the table from its DDL, then inserts the rows (as on dbt-postgres). `not_null` and `check` are enforced by the driver; `primary_key`, `unique` and `foreign_key` are accepted but not enforced (dbt warns) |
 | Small dialect bits | `?` bind parameters, `CURRENT_TIMESTAMP` (and `current_timestamp_in_utc_backcompat` in UTC, which dbt's default isn't in a non-UTC session), `validate_sql` with a query that can't return rows (the driver has no `EXPLAIN`), a subquery wrapper for `dbt show --limit`, and no alias on the subqueries `--empty` and microbatch put around refs, so a model's own alias (`from {{ ref('x') }} z`) still works |
 
-**Packages.** dbt looks for a package macro's adapter variants only in the
+### Package compatibility
+
+dbt looks for a package macro's adapter variants only in the
 root project and the package itself, so the adapter can't fix a package's
 `default__` macros that are wrong here. [`redis_adbc_utils/`](redis_adbc_utils/README.md)
 holds those fixes:
@@ -234,6 +267,8 @@ holds those fixes:
 
 This project installs it with dbt_utils and puts it first in
 `dispatch:`. Copy that setup to use those packages with Redis.
+
+### Profile configuration
 
 Profile options (`profiles.yml`): `driver` (the library's path; without an
 extension, the adapter adds `.dylib`, `.so` or `.dll`), `uri`, `username`,
@@ -261,7 +296,9 @@ extension, the adapter adds `.dylib`, `.so` or `.dll`), `uri`, `username`,
 `dbt debug` shows these options. A profile key the adapter doesn't know is
 ignored with a warning.
 
-## Driver issues found along the way
+## Compatibility and limitations
+
+### Driver issues found along the way
 
 Building this project turned up these issues, all filed on
 [alberttwong/redis-adbc-driver](https://github.com/alberttwong/redis-adbc-driver/issues).
@@ -322,7 +359,7 @@ dbt's adapter test suite found two more, still open:
 - [#188](https://github.com/alberttwong/redis-adbc-driver/issues/188): no
   `date(x)`. Use `cast(x as date)`.
 
-## Known limitations
+### Known limitations
 
 The driver runs the SQL that dbt and its cross-database macros generate, and
 the dbt features above all work. These limits come from the design:
@@ -350,7 +387,9 @@ the dbt features above all work. These limits come from the design:
   commands), not SQL privileges on tables, so a `grants` config is skipped
   with a warning.
 
-## Access control
+## Redis operations
+
+### Access control
 
 dbt can run as a Redis ACL user (`username` / `password` in `profiles.yml`).
 The commands and key patterns the driver needs, per feature, and a read-only
@@ -361,7 +400,7 @@ and `docs generate`. Unit tests and snapshots create temporary tables, which
 need `INCRBY` on the driver's metadata keys, so they fail for a read-only
 user (dbt reports the unit-test failure as a data-type mismatch).
 
-## Looking at the data in Redis
+### Looking at the data in Redis
 
 Each row is a HASH, and each table has a RediSearch index. On a cluster, add
 `-c` to `redis-cli` so it follows the key to its shard:
@@ -406,7 +445,7 @@ To watch the `FT.AGGREGATE` / `HMGET` traffic while dbt runs:
 docker exec -it redis-dbt-taxi redis-cli MONITOR
 ```
 
-## Data
+## Data source
 
 NYC TLC yellow taxi trip records for January 2019, as CSV, from the
 [DataTalksClub mirror](https://github.com/DataTalksClub/nyc-tlc-data). The TLC
