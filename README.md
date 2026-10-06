@@ -38,8 +38,9 @@ dbt  ──►  dbt-redis-adbc (adapter/)  ──►  adbc_driver_manager  ─�
 ### Requirements
 
 You need Docker, [uv](https://docs.astral.sh/uv/) (it provides Python
-3.10–3.13 for dbt), and network access to hub.getdbt.com for `dbt deps`. Building the driver from source also needs Go 1.26+ and a
-C toolchain; on macOS arm64 and Linux (x86-64, arm64) the prebuilt one is used.
+3.10–3.13 for dbt), and network access to hub.getdbt.com for `dbt deps`.
+Building the driver from source also needs Go 1.26.6 or newer and a C
+toolchain; on macOS arm64 and Linux (x86-64, arm64) the prebuilt one is used.
 
 ### Set up the environment
 
@@ -56,7 +57,8 @@ make setup
   to a commit) it builds the driver from source instead; `make driver-build`
   always does
 - downloads the CSV into `data/`
-- starts Redis **8.6.2**, the version Redis Cloud runs, on port 6380
+- starts Redis **8.6.2** on port 6380, matching CI. [Redis Cloud](https://redis.io/docs/latest/operate/rc/databases/version-management/)
+  supports Redis 8.6 and may run a different patch release
 
 ### Build the project
 
