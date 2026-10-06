@@ -208,6 +208,24 @@ class RedisAdbcHandle:
         self.conn.close()
 
 
+class RedisAdbcSession:
+    """What a Python model gets as `session`: the thread's ADBC DB-API
+    connection, except that its cursors go through the handle (so dbt
+    closes them, and Ctrl-C cancels them) and it can't be closed."""
+
+    def __init__(self, handle: RedisAdbcHandle):
+        self._handle = handle
+
+    def cursor(self):
+        return self._handle.cursor()
+
+    def close(self):
+        raise DbtRuntimeError("A Python model's session is dbt's connection; it can't be closed")
+
+    def __getattr__(self, name):
+        return getattr(self._handle.conn, name)
+
+
 class RedisAdbcConnectionManager(SQLConnectionManager):
     TYPE = "redis_adbc"
 

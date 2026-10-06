@@ -9,7 +9,7 @@ three things:
 - loads the NYC TLC yellow-taxi trips CSV into Redis,
 - transforms it with ordinary dbt SQL: views, tables, an incremental MERGE
   fact table, a microbatch model, a snapshot, a model contract, joins, window
-  functions, CTEs and `QUALIFY`,
+  functions, CTEs and `QUALIFY`, plus a Python model over Arrow,
 - tests and documents it with dbt's standard commands, and stores the model
   descriptions in Redis as comments.
 
@@ -87,15 +87,15 @@ table needs, so the driver refuses them when it connects.
 | `dbt debug` | Opens an ADBC connection. The driver checks that the Query Engine is available (`FT._LIST`) and that `FT.AGGREGATE` works, which is how it refuses Redis Flex |
 | `dbt seed` | 4 lookup CSVs (zones, payment types, rate codes, vendors), loaded with ADBC bulk ingest; reloads use `TRUNCATE` |
 | `dbt run-operation load_raw_trips` | Streams the 134 MB gzipped CSV with pyarrow, keeps every 50th row (~153k trips across January), adds `trip_id` (the trip's row number in the file), and bulk-ingests it into `raw.yellow_tripdata` in 6–10 s |
-| `dbt run` | 5 views and 8 tables, rebuilt with dbt's create-then-`ALTER … RENAME` swap; plus 2 incremental models built from a `CREATE TEMPORARY TABLE`: `fct_trips` with `MERGE`, and `agg_zone_daily` with delete+insert on `(pickup_date, pickup_location_id)`. `dim_zones` has an enforced contract, so it's created from its DDL (with `NOT NULL` and `CHECK` constraints) and then filled with `INSERT`. The marts' descriptions are stored with `COMMENT ON` |
+| `dbt run` | 5 views and 8 tables, rebuilt with dbt's create-then-`ALTER … RENAME` swap, and `agg_daily_revenue_zscores`, a Python model: dbt reads `agg_daily_revenue` into its own process as a pyarrow Table, and the result is bulk-ingested into the new table; plus 2 incremental models built from a `CREATE TEMPORARY TABLE`: `fct_trips` with `MERGE`, and `agg_zone_daily` with delete+insert on `(pickup_date, pickup_location_id)`. `dim_zones` has an enforced contract, so it's created from its DDL (with `NOT NULL` and `CHECK` constraints) and then filled with `INSERT`. The marts' descriptions are stored with `COMMENT ON` |
 | `dbt run --event-time-start … --event-time-end …` | `fct_trips_microbatch` (off unless `microbatch_demo` is set): one batch per pickup day; each batch deletes its day, then inserts it |
 | `dbt snapshot` | `zones_snapshot`: SCD type 2 history of the zone lookup (check strategy; a deleted zone gets a closing version), written by dbt's snapshot `MERGE` |
-| `dbt test` / `dbt build` | 56 data tests (`unique`, `not_null`, `accepted_values`, `relationships`, dbt_utils' `unique_combination_of_columns` / `accepted_range`, custom generic `non_negative` / `in_range`, 4 singular tests) and 2 unit tests |
+| `dbt test` / `dbt build` | 60 data tests (`unique`, `not_null`, `accepted_values`, `relationships`, dbt_utils' `unique_combination_of_columns` / `accepted_range`, custom generic `non_negative` / `in_range`, 5 singular tests, one of which checks the Python model's z-scores against SQL) and 2 unit tests |
 | `dbt show`, `dbt compile`, `dbt ls` | Previews, inline queries, and the analysis in `analyses/` |
 | `dbt build --empty --exclude-resource-type snapshot` | Builds and tests every model with no rows, in about 6 s. dbt reads each ref and source as `(select * from … where false limit 0)`, which the driver answers without reading the table. Tables, views and seeds are left empty (a view keeps the `where false limit 0` in its SQL; incremental models keep their rows), so run `make all` afterwards. Leave out the snapshot: with an empty source, `hard_deletes: new_record` would record every zone as deleted |
 | `dbt docs generate` | Catalog built from ADBC `GetObjects` (column types, tables vs views), with the comments the marts store through `persist_docs` |
 
-A clean `make all` takes 1.5–2 minutes on a laptop. It ends with 77 passes and 1
+A clean `make all` takes 1.5–2 minutes on a laptop. It ends with 82 passes and 1
 **intended** warning: the source test flags a $623,261.66 fare in the raw
 data, which staging filters out.
 
@@ -105,7 +105,7 @@ data, which staging filters out.
 request and push to `main`, against Redis 8.6.2 and the pinned driver:
 
 - `make all`, failing on any error and unless the build gives exactly
-  `PASS=77 WARN=1`
+  `PASS=82 WARN=1`
 - the three demos, checking the numbers they print
 - `dbt build --empty --exclude-resource-type snapshot`
 
@@ -157,7 +157,7 @@ Skipped, with the reason in the test:
 - grants and materialized views
 - zero-copy `dbt clone` (dbt clone creates views)
 - arrays
-- Python models ([#52](https://github.com/alberttwong/redis-dbt-adapter-with-project/issues/52))
+- incremental Python models (Python models are tables)
 - backslash escapes (standard SQL strings, as dbt-postgres skips)
 - `get_catalog_for_single_relation`, which dbt-core never calls
 
@@ -174,7 +174,8 @@ models/
                   composite key), fct_trips_microbatch (optional), dim_zones
                   (enforced contract), agg_daily_revenue (7-day rolling average, LAG, RANK),
                   agg_top_pickup_zones (RANK … QUALIFY), agg_hourly_demand, agg_borough_flows,
-                  agg_payment_mix, agg_airport_trips
+                  agg_payment_mix, agg_airport_trips, agg_daily_revenue_zscores (a Python model,
+                  pyarrow)
 snapshots/        zones_snapshot (SCD type 2 of the zone lookup)
 seeds/            taxi_zone_lookup, payment_types, rate_codes, vendors
 macros/           load_raw_trips and rename_zone (run-operations), day_part
@@ -203,8 +204,8 @@ Useful vars (defaults are in `dbt_project.yml`):
 ## What the adapter does
 
 dbt only connects to a database through an adapter package, and there is no
-generic ADBC adapter. `adapter/` is a small one: about 690 lines of Python and
-210 lines of macros. The driver runs the SQL of dbt's default macros and
+generic ADBC adapter. `adapter/` is a small one: about 780 lines of Python and
+290 lines of macros. The driver runs the SQL of dbt's default macros and
 materializations, so the adapter covers what isn't SQL:
 
 | Area | Adapter |
@@ -217,6 +218,7 @@ materializations, so the adapter covers what isn't SQL:
 | Incremental strategies | `append`, `delete+insert` (the default with a `unique_key`), `merge`, and `microbatch` (each batch replaces its `event_time` window; batches can run in parallel) |
 | Seed reloads | A reload without `--full-refresh` checks the CSV's columns before truncating, so a mismatch leaves the table as it was (there's no transaction to roll the `TRUNCATE` back) |
 | Loading | Seeds and the raw CSV go through Arrow bulk ingest, which is much faster than INSERTs. The driver converts each seed value to its column's type as an INSERT would, and supplies the Arrow type for each of the raw CSV's SQL column types |
+| Python models | Run in the dbt process, as dbt-duckdb runs them: Redis has no Python runtime, but the driver evaluates most SQL in the dbt process too. `dbt.ref()` and `dbt.source()` return a `pyarrow.Table` (`select * from …`, read with `fetch_arrow_table()`); `session` is the thread's ADBC DB-API connection, for running SQL. `model()` returns a pyarrow Table or RecordBatchReader, a pandas or polars DataFrame (a pandas index is dropped), or anything with the Arrow stream interface; it's bulk-ingested into the `__dbt_tmp` table, and dbt's rename swap finishes the job. The adapter's `table` materialization is dbt's, with Python added; tracebacks give the model file's line numbers. As dbt specifies, `--empty` and `--sample` don't limit a Python model's refs (sources are) |
 | Cross-database macros | dbt-core's defaults work natively except two: `safe_cast` uses the driver's `TRY_CAST`, and `listagg` with `limit_num` raises a clear error (it needs arrays). `tests/assert_cross_db_macros.sql` checks them all |
 | Model contracts | An enforced contract creates the table from its DDL, then inserts the rows (as on dbt-postgres). `not_null` and `check` are enforced by the driver; `primary_key`, `unique` and `foreign_key` are accepted but not enforced (dbt warns) |
 | Small dialect bits | `?` bind parameters, `CURRENT_TIMESTAMP` (and `current_timestamp_in_utc_backcompat` in UTC, which dbt's default isn't in a non-UTC session), `validate_sql` with a query that can't return rows (the driver has no `EXPLAIN`), a subquery wrapper for `dbt show --limit`, and no alias on the subqueries `--empty` and microbatch put around refs, so a model's own alias (`from {{ ref('x') }} z`) still works |
@@ -323,7 +325,7 @@ dbt's adapter test suite found two more, still open:
 ## Known limitations
 
 The driver runs the SQL that dbt and its cross-database macros generate, and
-the dbt features above all work. Three limits come from the design:
+the dbt features above all work. These limits come from the design:
 
 - **No transactions.** Every statement autocommits, so a run that stops in
   the middle of a materialization can leave a `__dbt_tmp` or `__dbt_backup`
@@ -337,9 +339,13 @@ the dbt features above all work. Three limits come from the design:
   for arrives. A statement that was writing keeps the rows it already
   wrote until the next run drops its relation. A cancelled `rename_rekey`
   rename leaves the table as it was.
-- **SQL models only.** dbt Python models aren't supported, and neither are
-  materialized views (`materialized='materialized_view'` stops with a clear
-  error).
+- **Python models are tables, and run in the dbt process.** Each ref a
+  Python model reads is loaded whole into dbt's memory. Python models can't
+  be incremental: dbt's incremental materialization runs only SQL models,
+  and says so. dbt runs `dbt show` and unit tests of a Python model as SQL,
+  so neither works on any adapter.
+- **No materialized views.** `materialized='materialized_view'` stops with
+  a clear error.
 - **No grants.** Redis controls access per user with ACLs (key patterns and
   commands), not SQL privileges on tables, so a `grants` config is skipped
   with a warning.
