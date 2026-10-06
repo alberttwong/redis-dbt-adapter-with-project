@@ -1,5 +1,8 @@
 export DBT_PROFILES_DIR := $(CURDIR)
 DBT := uv run dbt
+# Extra flags for the demos' `dbt show`. CI sets SHOW_FLAGS="--output json"
+# to check the numbers (scripts/ci_check.py).
+SHOW_FLAGS ?=
 
 .PHONY: setup redis-up redis-down driver driver-build data deps debug seed load run test build snapshot incremental-demo snapshot-demo microbatch-demo docs docs-serve clean all
 
@@ -60,9 +63,9 @@ INCREMENTAL_DEMO_SQL = select (select count(*) from {{ ref('fct_trips') }}) as t
 
 incremental-demo:
 	$(DBT) run -s +agg_zone_daily --full-refresh --vars '{trips_end: "2019-01-16 00:00:00"}'
-	$(DBT) show --inline "$(INCREMENTAL_DEMO_SQL)" --vars '{trips_end: "2019-01-16 00:00:00"}'
+	$(DBT) show $(SHOW_FLAGS) --inline "$(INCREMENTAL_DEMO_SQL)" --vars '{trips_end: "2019-01-16 00:00:00"}'
 	$(DBT) run -s +agg_zone_daily
-	$(DBT) show --inline "$(INCREMENTAL_DEMO_SQL)"
+	$(DBT) show $(SHOW_FLAGS) --inline "$(INCREMENTAL_DEMO_SQL)"
 
 # Snapshot the zone lookup, rename JFK, snapshot again: the history keeps
 # both versions. `dbt seed` then restores the lookup (a third snapshot would
@@ -71,7 +74,7 @@ snapshot-demo:
 	$(DBT) snapshot
 	$(DBT) run-operation rename_zone --args '{location_id: 132, name: "JFK International Airport"}'
 	$(DBT) snapshot
-	$(DBT) show --inline "select LocationID, Zone, dbt_valid_from, dbt_valid_to from {{ ref('zones_snapshot') }} where LocationID = 132 order by dbt_valid_from"
+	$(DBT) show $(SHOW_FLAGS) --inline "select LocationID, Zone, dbt_valid_from, dbt_valid_to from {{ ref('zones_snapshot') }} where LocationID = 132 order by dbt_valid_from"
 	$(DBT) seed
 
 # fct_trips_microbatch: backfill Jan 1–3 as three daily batches (run in
@@ -79,7 +82,7 @@ snapshot-demo:
 microbatch-demo:
 	$(DBT) run -s fct_trips_microbatch --vars '{microbatch_demo: true}' --full-refresh --event-time-start 2019-01-01 --event-time-end 2019-01-04
 	$(DBT) run -s fct_trips_microbatch --vars '{microbatch_demo: true}' --event-time-start 2019-01-02 --event-time-end 2019-01-03
-	$(DBT) show --vars '{microbatch_demo: true}' --inline "select pickup_date, count(*) as trips from {{ ref('fct_trips_microbatch') }} group by pickup_date order by pickup_date"
+	$(DBT) show $(SHOW_FLAGS) --vars '{microbatch_demo: true}' --inline "select pickup_date, count(*) as trips from {{ ref('fct_trips_microbatch') }} group by pickup_date order by pickup_date"
 
 docs:
 	$(DBT) docs generate

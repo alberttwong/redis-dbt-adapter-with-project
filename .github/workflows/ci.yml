@@ -1,0 +1,125 @@
+name: CI
+
+# Every PR and push to main: the whole project (make all, the demos, --empty)
+# on the pinned driver. Nightly, and on demand: the same against the driver's
+# latest release (or a given release or commit), so a driver change that
+# breaks the project shows up before the pin is bumped.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+    inputs:
+      driver_version:
+        description: Driver release or commit to test (default the latest release)
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  project:
+    name: project (Python ${{ matrix.python }}, ${{ matrix.versions }} dbt)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.13"]
+        # locked: uv.lock. oldest: the lowest versions the pyproject.toml
+        # files allow (the project's dbt-core, the adapter's other floors).
+        versions: [locked, oldest]
+    services:
+      # As docker-compose.yml runs it.
+      redis:
+        image: redis:8.6.2
+        ports: ["6380:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.2.0 # no major-version tags
+        with:
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+
+      - name: Install the dependencies
+        run: |
+          uv sync --locked
+          uv run dbt deps
+
+      - name: Install the oldest versions
+        if: matrix.versions == 'oldest'
+        run: |
+          uv pip install dbt-core==1.10.8 dbt-adapters==1.16.0 adbc-driver-manager==1.6.0 pyarrow==18.0.0
+          # Otherwise `uv run` syncs back to uv.lock.
+          echo UV_NO_SYNC=1 >> "$GITHUB_ENV"
+
+      - name: Choose the latest driver release
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED: ${{ inputs.driver_version }}
+        run: |
+          version="${REQUESTED:-$(gh release view --repo alberttwong/redis-adbc-driver --json tagName --jq .tagName)}"
+          echo "DRIVER_VERSION=${version}" >> "$GITHUB_ENV"
+
+      # A commit has no prebuilt driver: make driver builds it from source.
+      - uses: actions/setup-go@v7
+        if: inputs.driver_version != ''
+        with:
+          go-version: "1.26"
+
+      - name: Download the driver
+        run: make driver
+
+      - name: Cache the trips CSV
+        uses: actions/cache@v6
+        with:
+          path: data
+          key: nyc-tlc-yellow-2019-01
+
+      - name: Download the trips CSV
+        run: make data
+
+      # make all, with the build's results checked before docs replaces them.
+      # The warning is the intended total_amount source test.
+      - name: make all
+        run: |
+          make debug seed load build
+          ./scripts/ci_check.py results --pass 77 --warn 1
+          make docs
+
+      - name: make incremental-demo
+        run: ./scripts/ci_check.py demo incremental-demo
+
+      - name: make snapshot-demo
+        run: ./scripts/ci_check.py demo snapshot-demo
+
+      - name: make microbatch-demo
+        run: ./scripts/ci_check.py demo microbatch-demo
+
+      - name: dbt build --empty
+        run: |
+          uv run dbt build --empty --exclude-resource-type snapshot
+          ./scripts/ci_check.py results --pass 77
+
+      - name: Upload the dbt logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dbt-logs-${{ matrix.python }}-${{ matrix.versions }}
+          path: |
+            logs/
+            target/run_results.json
+          if-no-files-found: ignore

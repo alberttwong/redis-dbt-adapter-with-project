@@ -1,5 +1,7 @@
 # dbt Redis adapter with example NYC taxi trips DBT project
 
+[![CI](https://github.com/alberttwong/redis-dbt-adapter-with-project/actions/workflows/ci.yml/badge.svg)](https://github.com/alberttwong/redis-dbt-adapter-with-project/actions/workflows/ci.yml)
+
 A dbt Core project that tests the dbt Redis adapter, which is built on the
 [Redis ADBC driver](https://github.com/alberttwong/redis-adbc-driver). It does
 three things:
@@ -97,6 +99,26 @@ A clean `make all` takes 1.5–2 minutes on a laptop. It ends with 77 passes and
 **intended** warning: the source test flags a $623,261.66 fare in the raw
 data, which staging filters out.
 
+## CI
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every pull
+request and push to `main`, against Redis 8.6.2 and the pinned driver:
+
+- `make all`, failing on any error and unless the build gives exactly
+  `PASS=77 WARN=1`
+- the three demos, checking the numbers they print
+- `dbt build --empty --exclude-resource-type snapshot`
+
+[`scripts/ci_check.py`](scripts/ci_check.py) does the checks. It runs on
+Python 3.10 and 3.13, each with the locked versions and with the oldest ones
+the `pyproject.toml` files allow: dbt-core 1.10.8 (the first 1.10 release
+that accepts the `arguments:` the tests are written with), dbt-adapters 1.16,
+adbc-driver-manager 1.6 and pyarrow 18. Each run takes about 3 minutes.
+
+Nightly, the same runs against the driver's latest release, so a driver change
+that breaks the project shows up before the pin is bumped. To test another
+release or a driver commit, run the workflow by hand with `driver_version`.
+
 ## Project layout
 
 ```
@@ -116,7 +138,8 @@ tests/            generic (non_negative, in_range) and singular tests, including
 analyses/         top_pickup_zones_by_day_part
 adapter/          the dbt-redis-adbc adapter package (installed editable by uv)
 redis_adbc_utils/ redis_adbc__ overrides for dbt_utils, dbt_date and dbt_expectations macros
-scripts/          download_driver.sh, build_driver.sh, driver-version, download_data.sh
+scripts/          download_driver.sh, build_driver.sh, driver-version, download_data.sh,
+                  ci_check.py (CI's checks)
 ```
 
 Useful vars (defaults are in `dbt_project.yml`):
