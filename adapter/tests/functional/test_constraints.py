@@ -175,10 +175,15 @@ class TestConstraintQuotedColumn(BaseConstraintQuotedColumn):
         return QUOTED_COLUMN_SQL
 
 
+# Driver v0.0.12 says 'NULL value in column "id" violates not-null
+# constraint'; later drivers say Postgres's 'null value in column "id" of
+# relation "…" violates not-null constraint', which the suite's default
+# expects. This matches both; drop it once scripts/driver-version is past
+# v0.0.12.
 class RedisNotNullError:
     @pytest.fixture(scope="class")
     def expected_error_messages(self):
-        return ['NULL value in column "id" violates not-null constraint']
+        return ['value in column "id"', "violates not-null constraint"]
 
 
 class TestConstraintsRollback(RedisNotNullError, BaseConstraintsRollback):
