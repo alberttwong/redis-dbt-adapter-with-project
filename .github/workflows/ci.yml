@@ -101,7 +101,7 @@ jobs:
       - name: make all
         run: |
           make debug seed load build
-          ./scripts/ci_check.py results --pass 77 --warn 1
+          ./scripts/ci_check.py results --pass 82 --warn 1
           make docs
 
       - name: make incremental-demo
@@ -116,7 +116,7 @@ jobs:
       - name: dbt build --empty
         run: |
           uv run dbt build --empty --exclude-resource-type snapshot
-          ./scripts/ci_check.py results --pass 77
+          ./scripts/ci_check.py results --pass 82
 
       - name: Upload the dbt logs
         if: failure()

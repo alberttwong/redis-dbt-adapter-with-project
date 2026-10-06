@@ -4,7 +4,7 @@
     (columns, types, constraints) and then inserts the rows. -#}
 {% macro redis_adbc__create_table_as(temporary, relation, compiled_code, language='sql') -%}
   {%- if language != 'sql' -%}
-    {{ exceptions.raise_compiler_error("redis_adbc only supports SQL models") }}
+    {{ exceptions.raise_compiler_error("redis_adbc's create_table_as builds SQL models; its table materialization builds Python models") }}
   {%- endif -%}
   {%- set sql_header = config.get('sql_header', none) -%}
   {{ sql_header if sql_header is not none }}

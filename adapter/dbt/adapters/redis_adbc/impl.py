@@ -4,27 +4,32 @@ The driver speaks the SQL dbt's default macros and materializations generate
 (CTAS, views, ALTER ... RENAME, DROP ... CASCADE, TRUNCATE, temporary tables,
 MERGE, window functions), so this adapter mostly provides the connection,
 metadata through ADBC GetObjects, and fast bulk loading through ADBC ingest.
+Python models run in the dbt process, over Arrow.
 """
 
 import re
+import traceback
 from dataclasses import dataclass, field
-from typing import Dict, FrozenSet, List, Optional, Set, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple, Union
 
+import adbc_driver_manager
 import agate
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.csv as pacsv
 from dbt_common.clients.agate_helper import table_from_rows
+from dbt_common.exceptions import DbtRuntimeError
 from dbt_common.utils import filter_null_values
 
 from dbt.adapters.base import BaseRelation, available
-from dbt.adapters.base.impl import ConstraintSupport
+from dbt.adapters.base.impl import ConstraintSupport, log_code_execution
 from dbt.adapters.capability import Capability, CapabilityDict, CapabilitySupport, Support
 from dbt.adapters.base.column import Column
 from dbt.adapters.base.relation import AdapterTrackingRelationInfo, InformationSchema
+from dbt.adapters.contracts.connection import AdapterResponse
 from dbt.adapters.contracts.relation import Policy, RelationType
 from dbt_common.contracts.constraints import ConstraintType
-from dbt.adapters.redis_adbc.connections import RedisAdbcConnectionManager
+from dbt.adapters.redis_adbc.connections import RedisAdbcConnectionManager, RedisAdbcSession
 from dbt.adapters.sql import SQLAdapter
 
 
@@ -56,6 +61,28 @@ def arrow_type_to_sql(t) -> str:
     if pa.types.is_timestamp(t):
         return "TIMESTAMP WITH TIME ZONE" if t.tz else "TIMESTAMP"
     return str(t).upper()
+
+
+def python_model_result(result: Any) -> Union[pa.Table, pa.RecordBatchReader]:
+    """A Python model's result as Arrow: a pyarrow Table or RecordBatchReader
+    as is, a pandas or polars DataFrame converted, or anything else that
+    exports an Arrow stream (__arrow_c_stream__). A pandas index is dropped,
+    as other adapters drop it."""
+    if isinstance(result, (pa.Table, pa.RecordBatchReader)):
+        return result
+    if isinstance(result, pa.RecordBatch):
+        return pa.Table.from_batches([result])
+    library = type(result).__module__.split(".")[0]
+    if library == "pandas" and hasattr(result, "columns"):
+        return pa.Table.from_pandas(result, preserve_index=False)
+    if library == "polars":
+        return (result.collect() if hasattr(result, "collect") else result).to_arrow()
+    if hasattr(result, "__arrow_c_stream__"):
+        return pa.RecordBatchReader.from_stream(result)
+    raise DbtRuntimeError(
+        f"A Python model's model() returned a {type(result).__module__}.{type(result).__name__}; return a "
+        "pyarrow.Table or RecordBatchReader, or a pandas or polars DataFrame"
+    )
 
 
 _TYPE_WITH_ARGS = re.compile(r"^\s*([A-Za-z ]+?)\s*\(\s*(\d+)\s*(?:,\s*(\d+)\s*)?\)\s*$")
@@ -324,6 +351,49 @@ class RedisAdbcAdapter(SQLAdapter):
             "table_owner",
         ]
         return self._catalog_filter_table(table_from_rows(rows, columns), used_schemas)
+
+    # --- Python models, run in the dbt process -------------------------------------
+
+    @log_code_execution
+    def submit_python_job(self, parsed_model: dict, compiled_code: str) -> AdapterResponse:
+        """Run a Python model's code (see redis_adbc__py_write_table) here, in
+        the dbt process. dbt.ref() and dbt.source() read the relation as a
+        pyarrow.Table, and `session` is the thread's connection; model()'s
+        result is bulk-ingested into the table the materialization builds."""
+        handle = self.connections.get_thread_connection().handle
+
+        def load_df(relation_name: str) -> pa.Table:
+            # A relation, or (for a source under --empty or --sample) a
+            # subquery.
+            cur = handle.cursor()
+            try:
+                cur.execute(f"select * from {relation_name}")
+                return cur.fetch_arrow_table()
+            finally:
+                cur.close()
+
+        namespace: Dict[str, Any] = {"__name__": parsed_model["unique_id"]}
+        with self.connections.exception_handler(f"Python model {parsed_model['unique_id']}"):
+            try:
+                # The model's own code comes first, so a traceback's line
+                # numbers are the model file's.
+                exec(compile(compiled_code, parsed_model["original_file_path"], "exec"), namespace)
+                result = namespace["model"](namespace["dbtObj"](load_df), RedisAdbcSession(handle))
+            except (DbtRuntimeError, adbc_driver_manager.Error):
+                raise  # a read or the session's SQL: exception_handler reports it
+            except Exception as e:
+                frames = traceback.format_exception(type(e), e, e.__traceback__.tb_next)
+                raise DbtRuntimeError("Python model failed:\n" + "".join(frames).rstrip()) from e
+
+        target = namespace["dbt_redis_adbc_target"]
+        relation = self.Relation.create(
+            database=self.config.credentials.database,
+            schema=target["schema"],
+            identifier=target["identifier"],
+            type=RelationType.Table,
+        )
+        rows = self._ingest(relation, python_model_result(result), mode="create")
+        return AdapterResponse(_message="OK", rows_affected=rows)
 
     # --- bulk loading through ADBC ingest -----------------------------------------
 

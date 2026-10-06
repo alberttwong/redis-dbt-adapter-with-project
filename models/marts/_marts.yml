@@ -77,6 +77,19 @@ models:
           - in_range:
               arguments: {min_value: 1, max_value: 31}
 
+  - name: agg_daily_revenue_zscores
+    description: >
+      Each pickup date's total revenue as a z-score against the month's daily
+      mean. A Python model: dbt reads agg_daily_revenue into its own process
+      as a pyarrow Table, computes the scores with pyarrow.compute, and
+      bulk-ingests the result.
+    columns:
+      - name: pickup_date
+        data_tests: [unique, not_null]
+      - name: revenue_zscore
+        description: (total_revenue - mean) / sample standard deviation, to 3 places.
+        data_tests: [not_null]
+
   - name: agg_top_pickup_zones
     description: The busiest pickup zones of each borough (RANK() per borough, filtered with QUALIFY).
     columns:
