@@ -51,7 +51,7 @@ make setup
 
 - runs `uv sync` and `dbt deps` (dbt_utils, and the local `redis_adbc_utils`)
 - puts the driver in `driver/`: the prebuilt library from the pinned
-  release (`v0.0.12`, in `scripts/driver-version`), after checking its SHA-256.
+  release (`v0.0.13`, in `scripts/driver-version`), after checking its SHA-256.
   Where the release has no build (another platform, or `DRIVER_VERSION` set
   to a commit) it builds the driver from source instead; `make driver-build`
   always does
@@ -302,7 +302,7 @@ ignored with a warning.
 
 Building this project turned up these issues, all filed on
 [alberttwong/redis-adbc-driver](https://github.com/alberttwong/redis-adbc-driver/issues).
-All of them are fixed in the pinned driver, v0.0.12, except the two below.
+All of them are fixed in the pinned driver, v0.0.13, except the two below.
 
 | Issue | Fixed in |
 |-|-|
