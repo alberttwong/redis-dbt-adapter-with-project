@@ -26,12 +26,10 @@ DRIVER = Path(__file__).resolve().parents[3] / "driver" / "libadbc_driver_redis"
 # here.
 UNION_TYPES = "UNION's column types (driver #187: https://github.com/alberttwong/redis-adbc-driver/issues/187)"
 DATE_FUNCTION = "no date(x) (driver #188: https://github.com/alberttwong/redis-adbc-driver/issues/188)"
+REPEATED_DISTINCT = "select distinct x, x (driver #232: https://github.com/alberttwong/redis-adbc-driver/issues/232)"
 DRIVER_ISSUES = {
-    # Expected rows: cast('2022-02-14' as date) union all select '2020-02-12'.
-    "test_incremental.py::TestIncrementalUniqueKey::test__one_unique_key": UNION_TYPES,
-    "test_incremental.py::TestIncrementalUniqueKey::test__unary_unique_key_list": UNION_TYPES,
-    "test_incremental.py::TestIncrementalUniqueKey::test__duplicated_unary_unique_key_list": UNION_TYPES,
-    "test_incremental.py::TestIncrementalUniqueKey::test__trinary_unique_key_list": UNION_TYPES,
+    # unique_key=['state', 'state']: delete+insert runs select distinct state, state.
+    "test_incremental.py::TestIncrementalUniqueKey::test__duplicated_unary_unique_key_list": REPEATED_DISTINCT,
     # A DATE updated_at with invalidate_hard_deletes.
     "test_snapshot.py::TestSimpleSnapshot": UNION_TYPES,
     # dbt_valid_to_current: "date('2099-12-31')".
