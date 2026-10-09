@@ -354,10 +354,10 @@ All of them are fixed in the pinned driver, v0.0.13, except the two below.
 dbt's adapter test suite found two more, still open:
 
 - [#187](https://github.com/alberttwong/redis-adbc-driver/issues/187): `UNION`
-  doesn't resolve column types as Postgres does. A string literal doesn't
-  take the other branch's type, and `DATE` doesn't combine with `TIMESTAMP`.
-  So a timestamp-strategy snapshot with a `DATE` `updated_at` that tracks hard
-  deletes fails from its second run.
+  doesn't resolve column types as Postgres does: `DATE` doesn't combine with
+  `TIMESTAMP`. So a timestamp-strategy snapshot with a `DATE` `updated_at`
+  that tracks hard deletes fails from its second run. (v0.0.13 fixed the other
+  half, a string literal taking the other branch's type.)
 - [#188](https://github.com/alberttwong/redis-adbc-driver/issues/188): no
   `date(x)`. Use `cast(x as date)`.
 
