@@ -2,6 +2,11 @@
 # Download the prebuilt Redis ADBC driver from its GitHub release into
 # ./driver/, after checking the release's SHA-256.
 #
+# The driver's repo is private, so this downloads with gh when gh is logged
+# in (gh auth login, or GH_TOKEN as in CI) with read access to it. Otherwise
+# it uses curl, which works only while the repo is public, or with
+# DRIVER_RELEASES set to a mirror.
+#
 # Releases have builds for macOS arm64, Linux x86-64 and Linux arm64. When
 # there's none for this platform or version (another OS, or DRIVER_VERSION set
 # to a commit), this builds the driver from source instead
@@ -9,7 +14,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DRIVER_RELEASES="${DRIVER_RELEASES:-https://github.com/alberttwong/redis-adbc-driver/releases/download}"
+DRIVER_GH_REPO="${DRIVER_GH_REPO:-alberttwong/redis-adbc-driver}"
+DRIVER_RELEASES="${DRIVER_RELEASES:-}"
 DRIVER_VERSION="${DRIVER_VERSION:-$(cat "${ROOT}/scripts/driver-version")}"
 
 build_instead() {
@@ -25,19 +31,30 @@ case "$(uname -s)-$(uname -m)" in
 esac
 
 NAME="adbc_driver_redis-${DRIVER_VERSION}-${PLATFORM}"
-URL="${DRIVER_RELEASES}/${DRIVER_VERSION}/${NAME}.tar.gz"
 TMP="$(mktemp -d)"
 trap 'rm -rf "${TMP}"' EXIT
 
-# A 404 means the release (or this platform's build) doesn't exist: build
-# instead. Any other failure stops here.
-status="$(curl -sSL -o "${TMP}/${NAME}.tar.gz" -w '%{http_code}' "${URL}")"
-case "${status}" in
-  200) ;;
-  404) build_instead "No prebuilt driver ${NAME} (is ${DRIVER_VERSION} a release?)" ;;
-  *) echo "Downloading ${URL} failed: HTTP ${status}" >&2; exit 1 ;;
-esac
-curl -fsSL -o "${TMP}/${NAME}.tar.gz.sha256" "${URL}.sha256"
+# A missing release (or build for this platform) means build instead. Any
+# other failure stops here.
+if [ -z "${DRIVER_RELEASES}" ] && command -v gh >/dev/null && gh auth status >/dev/null 2>&1; then
+  if ! gh release download "${DRIVER_VERSION}" --repo "${DRIVER_GH_REPO}" --dir "${TMP}" \
+    --pattern "${NAME}.tar.gz" --pattern "${NAME}.tar.gz.sha256" 2>"${TMP}/gh.log"; then
+    case "$(cat "${TMP}/gh.log")" in
+      *"release not found"* | *"no assets match"*)
+        build_instead "No prebuilt driver ${NAME} in ${DRIVER_GH_REPO} (is ${DRIVER_VERSION} a release?)" ;;
+      *) cat "${TMP}/gh.log" >&2; exit 1 ;;
+    esac
+  fi
+else
+  URL="${DRIVER_RELEASES:-https://github.com/${DRIVER_GH_REPO}/releases/download}/${DRIVER_VERSION}/${NAME}.tar.gz"
+  status="$(curl -sSL -o "${TMP}/${NAME}.tar.gz" -w '%{http_code}' "${URL}")"
+  case "${status}" in
+    200) ;;
+    404) build_instead "No prebuilt driver ${NAME} (is ${DRIVER_VERSION} a release?)" ;;
+    *) echo "Downloading ${URL} failed: HTTP ${status}" >&2; exit 1 ;;
+  esac
+  curl -fsSL -o "${TMP}/${NAME}.tar.gz.sha256" "${URL}.sha256"
+fi
 
 if command -v sha256sum >/dev/null; then
   (cd "${TMP}" && sha256sum --check --quiet "${NAME}.tar.gz.sha256")

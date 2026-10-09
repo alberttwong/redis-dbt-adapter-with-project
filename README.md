@@ -41,6 +41,9 @@ You need Docker, [uv](https://docs.astral.sh/uv/) (it provides Python
 3.10–3.13 for dbt), and network access to hub.getdbt.com for `dbt deps`.
 Building the driver from source also needs Go 1.26.6 or newer and a C
 toolchain; on macOS arm64 and Linux (x86-64, arm64) the prebuilt one is used.
+The driver's repo, [alberttwong/redis-adbc-driver](https://github.com/alberttwong/redis-adbc-driver),
+is private: you need read access to it, and the [GitHub CLI](https://cli.github.com/)
+logged in (`gh auth login`) to download its releases.
 
 ### Set up the environment
 
@@ -149,6 +152,11 @@ dbt packages than the oldest ones.
 Nightly, all of it runs against the driver's latest release, so a driver change
 that breaks the project shows up before the pin is bumped. To test another
 release or a driver commit, run the workflow by hand with `driver_version`.
+
+The driver's repo is private, so CI reads it with the `DRIVER_REPO_TOKEN`
+secret: a fine-grained token with read-only Contents access to
+alberttwong/redis-adbc-driver alone. It downloads the release and, when CI
+builds the driver from source, clones the repo.
 
 ### dbt's adapter test suite
 
