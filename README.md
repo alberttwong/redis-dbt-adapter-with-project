@@ -304,7 +304,7 @@ ignored with a warning.
 
 Building this project turned up these issues, all filed on
 [alberttwong/redis-adbc-driver](https://github.com/alberttwong/redis-adbc-driver/issues).
-All of them are fixed in the pinned driver, v0.0.14, except the two below.
+All of them are fixed in the pinned driver, v0.0.14, except the three below.
 
 | Issue | Fixed in |
 |-|-|
@@ -351,7 +351,7 @@ All of them are fixed in the pinned driver, v0.0.14, except the two below.
 | [#150](https://github.com/alberttwong/redis-adbc-driver/issues/150) A cancel didn't stop work the driver does in memory (Ctrl-C lagged by a whole join), and was reported as `IO` | [#152](https://github.com/alberttwong/redis-adbc-driver/pull/152) |
 | [#151](https://github.com/alberttwong/redis-adbc-driver/issues/151) Seeds (bulk ingest) read timestamps without an offset as UTC in a non-UTC session | [#153](https://github.com/alberttwong/redis-adbc-driver/pull/153) |
 
-dbt's adapter test suite found two more, still open:
+dbt's adapter test suite found three more, still open:
 
 - [#187](https://github.com/alberttwong/redis-adbc-driver/issues/187): `UNION`
   doesn't resolve column types as Postgres does: `DATE` doesn't combine with
@@ -360,6 +360,10 @@ dbt's adapter test suite found two more, still open:
   half, a string literal taking the other branch's type.)
 - [#188](https://github.com/alberttwong/redis-adbc-driver/issues/188): no
   `date(x)`. Use `cast(x as date)`.
+- [#232](https://github.com/alberttwong/redis-adbc-driver/issues/232): a
+  column repeated in `DISTINCT` or `GROUP BY` (`select distinct x, x`) fails.
+  So delete+insert with a repeated `unique_key`, like `['state', 'state']`,
+  fails on its incremental run.
 
 ### Known limitations
 

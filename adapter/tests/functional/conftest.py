@@ -26,7 +26,7 @@ DRIVER = Path(__file__).resolve().parents[3] / "driver" / "libadbc_driver_redis"
 # here.
 UNION_TYPES = "UNION's column types (driver #187: https://github.com/alberttwong/redis-adbc-driver/issues/187)"
 DATE_FUNCTION = "no date(x) (driver #188: https://github.com/alberttwong/redis-adbc-driver/issues/188)"
-REPEATED_DISTINCT = "select distinct x, x: FT.AGGREGATE's 'Property specified more than once' (driver issue not filed yet)"
+REPEATED_DISTINCT = "select distinct x, x (driver #232: https://github.com/alberttwong/redis-adbc-driver/issues/232)"
 DRIVER_ISSUES = {
     # unique_key=['state', 'state']: delete+insert runs select distinct state, state.
     "test_incremental.py::TestIncrementalUniqueKey::test__duplicated_unary_unique_key_list": REPEATED_DISTINCT,
