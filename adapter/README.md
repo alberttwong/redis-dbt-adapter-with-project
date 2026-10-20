@@ -1,8 +1,8 @@
 # dbt-redis-adbc
 
-A community dbt adapter for Redis 8.x using the
-[Redis Arrow Database Connectivity (ADBC) driver](https://github.com/alberttwong/redis-adbc-driver).
-Supports Python-based dbt 1.x; dbt 2.x and the dbt platform are not supported.
+A dbt Core adapter for Redis 8.x, built on the
+[Redis ADBC driver](https://github.com/alberttwong/redis-adbc-driver).
+Compatible with dbt Core 1.10 and later 1.x releases.
 
 ## Install
 
