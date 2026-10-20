@@ -1,3 +1,5 @@
+<img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=1bdeb56d-a61a-44fa-b80a-d6890ff6e885" />
+
 # dbt Redis adapter: NYC taxi example project
 
 [![CI](https://github.com/alberttwong/redis-dbt-adapter-with-project/actions/workflows/ci.yml/badge.svg)](https://github.com/alberttwong/redis-dbt-adapter-with-project/actions/workflows/ci.yml)
