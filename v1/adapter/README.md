@@ -61,7 +61,7 @@ dbt debug --profile redis_project
 - Python models run in the dbt process and load their inputs into its memory;
   incremental Python models are not supported
 
-See the [adapter reference](https://github.com/alberttwong/redis-dbt-adapter-with-project#adapter-reference)
+See the [adapter reference](https://github.com/alberttwong/redis-dbt-adapter-with-project/blob/main/v1/README.md#adapter-reference)
 for all profile options, supported features, and limitations. The
-[example project and functional tests](https://github.com/alberttwong/redis-dbt-adapter-with-project)
+[example project and functional tests](https://github.com/alberttwong/redis-dbt-adapter-with-project/tree/main/v1)
 demonstrate the adapter with NYC taxi data.

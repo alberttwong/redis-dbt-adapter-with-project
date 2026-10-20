@@ -25,9 +25,9 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/alberttwong/redis-dbt-adapter-with-project"
-Documentation = "https://github.com/alberttwong/redis-dbt-adapter-with-project#adapter-reference"
+Documentation = "https://github.com/alberttwong/redis-dbt-adapter-with-project/blob/main/v1/README.md#adapter-reference"
 Issues = "https://github.com/alberttwong/redis-dbt-adapter-with-project/issues"
-Source = "https://github.com/alberttwong/redis-dbt-adapter-with-project/tree/main/adapter"
+Source = "https://github.com/alberttwong/redis-dbt-adapter-with-project/tree/main/v1/adapter"
 
 [tool.hatch.build.targets.wheel]
 packages = ["dbt"]
