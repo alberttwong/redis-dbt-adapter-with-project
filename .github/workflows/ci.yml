@@ -24,10 +24,26 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Runner tests only: full v2 Redis execution awaits a Redis-enabled engine.
+  v2-harness:
+    name: v2 smoke runner tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.13"
+      - name: Test the v2 smoke runner without v1 dependencies
+        run: uv run --no-project --python 3.13 python -m unittest discover -s v2/tests -v
+
   project:
     name: project (Python ${{ matrix.python }}, ${{ matrix.versions }} dbt)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: v1
     env:
       # Without the dev group (dbt-tests-adapter, pytest), which needs a newer
       # dbt-common than the oldest dbt-core allows.
@@ -56,6 +72,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           enable-cache: true
+          cache-dependency-glob: v1/uv.lock
 
       - name: Install the dependencies
         run: |
@@ -97,7 +114,7 @@ jobs:
       - name: Cache the trips CSV
         uses: actions/cache@v6
         with:
-          path: data
+          path: v1/data
           key: nyc-tlc-yellow-2019-01
 
       - name: Download the trips CSV
@@ -131,8 +148,8 @@ jobs:
         with:
           name: dbt-logs-${{ matrix.python }}-${{ matrix.versions }}
           path: |
-            logs/
-            target/run_results.json
+            v1/logs/
+            v1/target/run_results.json
           if-no-files-found: ignore
 
   # dbt's adapter test suite, on the locked versions only: dbt-tests-adapter
@@ -141,6 +158,9 @@ jobs:
     name: adapter tests (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: v1
     strategy:
       fail-fast: false
       matrix:
@@ -161,6 +181,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           enable-cache: true
+          cache-dependency-glob: v1/uv.lock
 
       - name: Install the dependencies
         run: uv sync --locked
@@ -197,5 +218,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: adapter-tests-logs-${{ matrix.python }}
-          path: logs/
+          path: v1/logs/
           if-no-files-found: ignore
