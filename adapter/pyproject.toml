@@ -6,6 +6,15 @@ build-backend = "hatchling.build"
 name = "dbt-redis-adbc"
 version = "0.1.0"
 description = "dbt adapter for Redis 8.x using the Redis ADBC driver"
+readme = "README.md"
+authors = [{ name = "Albert T. Wong" }]
+keywords = ["dbt", "redis", "adbc", "analytics"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Database",
+]
 requires-python = ">=3.10"
 dependencies = [
     "dbt-core>=1.10,<2",
@@ -13,6 +22,12 @@ dependencies = [
     "adbc-driver-manager>=1.6",
     "pyarrow>=18",
 ]
+
+[project.urls]
+Homepage = "https://github.com/alberttwong/redis-dbt-adapter-with-project"
+Documentation = "https://github.com/alberttwong/redis-dbt-adapter-with-project#adapter-reference"
+Issues = "https://github.com/alberttwong/redis-dbt-adapter-with-project/issues"
+Source = "https://github.com/alberttwong/redis-dbt-adapter-with-project/tree/main/adapter"
 
 [tool.hatch.build.targets.wheel]
 packages = ["dbt"]
