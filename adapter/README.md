@@ -1,0 +1,67 @@
+# dbt-redis-adbc
+
+A community dbt adapter for Redis 8.x using the
+[Redis Arrow Database Connectivity (ADBC) driver](https://github.com/alberttwong/redis-adbc-driver).
+Supports Python-based dbt 1.x; dbt 2.x and the dbt platform are not supported.
+
+## Install
+
+Requires Python 3.10 or later and Redis 8.x with the Query Engine (Search)
+enabled. The adapter is tested against Redis 8.6.2.
+
+```shell
+python -m pip install dbt-redis-adbc
+```
+
+The Python package does not include the native Redis ADBC driver. Download and
+extract the shared library for your platform from the
+[driver releases](https://github.com/alberttwong/redis-adbc-driver/releases).
+The example project uses driver v0.0.14. Prebuilt libraries are available for
+macOS Apple Silicon, Linux x86-64, and Linux arm64.
+
+Set `REDIS_ADBC_DRIVER` to the library's absolute path. See the driver's
+[server requirements and ACL permissions](https://github.com/alberttwong/redis-adbc-driver#server-requirements)
+before connecting.
+
+## Configure
+
+Set your dbt project's `profile` to `redis_project` and add this profile to
+`~/.dbt/profiles.yml`:
+
+```yaml
+redis_project:
+  target: dev
+  outputs:
+    dev:
+      type: redis_adbc
+      driver: "{{ env_var('REDIS_ADBC_DRIVER') }}"
+      uri: "{{ env_var('REDIS_URI', 'redis://localhost:6379/0') }}"
+      username: "{{ env_var('REDIS_USERNAME', '') }}"
+      password: "{{ env_var('REDIS_PASSWORD', '') }}"
+      database: redis
+      schema: analytics
+      threads: 4
+```
+
+Use a `rediss://` URI for TLS. Keep credentials in the separate username and
+password fields. From your project, verify the connection with:
+
+```shell
+dbt debug --profile redis_project
+```
+
+## Features and limitations
+
+- Tables, views, ephemeral models, Arrow bulk-loaded seeds, and snapshots
+- SQL incremental models with `append`, `delete+insert`, `merge`, and `microbatch`
+- Model contracts, persisted relation and column descriptions, and Python table models
+- No SQL transactions or rollback: statements autocommit, and interrupted writes
+  may need cleanup or a rerun
+- No materialized views or SQL grants; configure access with Redis ACLs
+- Python models run in the dbt process and load their inputs into its memory;
+  incremental Python models are not supported
+
+See the [adapter reference](https://github.com/alberttwong/redis-dbt-adapter-with-project#adapter-reference)
+for all profile options, supported features, and limitations. The
+[example project and functional tests](https://github.com/alberttwong/redis-dbt-adapter-with-project)
+demonstrate the adapter with NYC taxi data.
