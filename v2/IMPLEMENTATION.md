@@ -61,8 +61,8 @@ checks pass. Trusted TLS on Linux remains pending.
   Port applicable functional scenarios; the Python `dbt-tests-adapter` suite
   cannot validate a compiled v2 adapter by itself.
 - [x] Document unsupported features and the migration commands; retain v1
-  support while v2 is developed. Issue #69 stays open pending Linux validation
-  and review/merge of the feature-parity implementation.
+  support while v2 is developed. Linux validation and review/merge of the
+  feature-parity implementation remain required before broader support claims.
 
 ## Validated milestone
 
