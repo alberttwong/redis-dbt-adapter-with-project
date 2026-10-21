@@ -1,5 +1,11 @@
 # Redis adapter integration for dbt v2
 
+**Adapter source:** [`alberttwong/dbt`](https://github.com/alberttwong/dbt).
+The Redis adapter is compiled into that Rust engine. This `v2/` directory
+contains the setup guide, profiles, integration fixtures, and validation tools.
+Start with [building the tested engine](#engine-implementation), then
+[configure a connection and run the smoke checks](#smoke-checks).
+
 **Experimental native Redis support is available in our engine fork.** macOS arm64
 and Linux builds of dbt-oss 2.0.8 passed this fixture against Redis 8.6.2 and
 Redis ADBC v0.0.16: parse, full-refresh build, a second incremental build, all

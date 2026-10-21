@@ -24,14 +24,26 @@ in [`v1/adapter/`](v1/adapter/README.md). If you had a virtual environment from
 the former root layout, recreate it from `v1/` with `uv sync --reinstall` and
 refresh local package links with `uv run dbt deps`.
 
-## Develop v2 support
+## Use Redis with dbt v2
 
-dbt v2 compiles adapters into its Rust engine. Installing the v1 Python package
-cannot register a v2 adapter. Engine implementation belongs in the
-[`alberttwong/dbt` fork](https://github.com/alberttwong/dbt) of
-[`dbt-labs/dbt`](https://github.com/dbt-labs/dbt); integration fixtures and tooling
-remain in this repository under `v2/`.
+**The Redis dbt v2 adapter is implemented in the
+[`alberttwong/dbt` engine fork](https://github.com/alberttwong/dbt).** Its engine
+changes are merged, and the supported v1 compatibility scenarios pass on macOS
+and Linux, including the NYC taxi project, Python models, snapshots,
+microbatch, and trusted TLS.
 
-See the [v2 development guide](v2/README.md) and
+- **Get the adapter:** build the Redis-enabled engine from the tested source
+  commit listed in [`v2/upstream.json`](v2/upstream.json), following the
+  [v2 setup guide](v2/README.md#engine-implementation).
+- **Configure and run it:** follow the [connection and smoke instructions](v2/README.md#smoke-checks)
+  and [full-project validation commands](v2/README.md#feature-parity-checks).
+- **Check coverage and limitations:** see the [validation results](v2/VALIDATION.md).
+
+The adapter is compiled into that engine; the standard dbt v2 executable does
+not include Redis, and installing the v1 Python package does not add it. Redis
+support remains experimental in the custom engine.
+
+This repository's [`v2/`](v2/README.md) directory contains integration fixtures,
+configuration examples, and test runners. The Rust adapter implementation lives
+in the engine fork. Development history is tracked in
 [issue #69](https://github.com/alberttwong/redis-dbt-adapter-with-project/issues/69).
-The v2 smoke runner does not use the v1 adapter or change the NYC taxi schemas.
