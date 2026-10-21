@@ -19,7 +19,6 @@ import pyarrow.compute as pc
 import pyarrow.csv as pacsv
 from dbt_common.clients.agate_helper import table_from_rows
 from dbt_common.exceptions import DbtRuntimeError
-from dbt_common.utils import filter_null_values
 
 from dbt.adapters.base import BaseRelation, available
 from dbt.adapters.base.impl import ConstraintSupport, log_code_execution
@@ -276,15 +275,6 @@ class RedisAdbcAdapter(SQLAdapter):
             self.drop_relation(from_relation)
             return
         super().rename_relation(from_relation, to_relation)
-
-    def _make_match_kwargs(self, database: str, schema: str, identifier: str) -> Dict[str, str]:
-        # The driver keeps schema and table names as written and matches them
-        # case-sensitively, quoted or not (Postgres folds unquoted names to
-        # lower case). So look relations up with their case; dbt's default
-        # lower-cases them and then finds only an "approximate match".
-        if database is not None and self.config.quoting["database"] is False:
-            database = database.lower()
-        return filter_null_values({"database": database, "identifier": identifier, "schema": schema})
 
     @available
     def list_relations_table(self, schema_relation: BaseRelation) -> agate.Table:

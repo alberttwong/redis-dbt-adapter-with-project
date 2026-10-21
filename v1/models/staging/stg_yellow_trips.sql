@@ -4,10 +4,10 @@
 
 select
     trip_id,
-    VendorID                                    as vendor_id,
-    RatecodeID                                  as rate_code_id,
-    PULocationID                                as pickup_location_id,
-    DOLocationID                                as dropoff_location_id,
+    "VendorID"                                  as vendor_id,
+    "RatecodeID"                                as rate_code_id,
+    "PULocationID"                              as pickup_location_id,
+    "DOLocationID"                              as dropoff_location_id,
     payment_type                                as payment_type_id,
 
     tpep_pickup_datetime                        as pickup_datetime,

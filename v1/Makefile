@@ -74,7 +74,7 @@ snapshot-demo:
 	$(DBT) snapshot
 	$(DBT) run-operation rename_zone --args '{location_id: 132, name: "JFK International Airport"}'
 	$(DBT) snapshot
-	$(DBT) show $(SHOW_FLAGS) --inline "select LocationID, Zone, dbt_valid_from, dbt_valid_to from {{ ref('zones_snapshot') }} where LocationID = 132 order by dbt_valid_from"
+	$(DBT) show $(SHOW_FLAGS) --inline "select \"LocationID\", \"Zone\", dbt_valid_from, dbt_valid_to from {{ ref('zones_snapshot') }} where \"LocationID\" = 132 order by dbt_valid_from"
 	$(DBT) seed
 
 # fct_trips_microbatch: backfill Jan 1–3 as three daily batches (run in
