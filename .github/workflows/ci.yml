@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Runner tests only: full v2 Redis execution awaits a Redis-enabled engine.
+  # Fast runner tests; the pinned native engine has a separate manual workflow.
   v2-harness:
     name: v2 smoke runner tests
     runs-on: ubuntu-latest

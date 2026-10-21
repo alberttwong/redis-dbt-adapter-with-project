@@ -2,5 +2,10 @@
   "upstream": "https://github.com/dbt-labs/dbt",
   "fork": "https://github.com/alberttwong/dbt",
   "baseline_commit": "4bb4caa4ae1e7f4354c7817093a55514c6cbea41",
-  "tracking_issue": "https://github.com/alberttwong/redis-dbt-adapter-with-project/issues/69"
+  "tracking_issue": "https://github.com/alberttwong/redis-dbt-adapter-with-project/issues/69",
+  "implementation_branch": "codex/redis-native-profile",
+  "implementation_commit": "eebffc8ef2a7a6362c750d725a7a7b0d3d515497",
+  "connection_pull_request": "https://github.com/alberttwong/dbt/pull/1",
+  "driver_version": "v0.0.14",
+  "implementation_pull_request": "https://github.com/alberttwong/dbt/pull/2"
 }
