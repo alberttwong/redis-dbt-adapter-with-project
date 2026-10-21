@@ -1,0 +1,21 @@
+version: 2
+models:
+  - name: trips_table
+    columns:
+      - name: id
+        data_tests: [not_null, unique]
+  - name: trips_incremental
+    columns:
+      - name: id
+        data_tests: [not_null, unique]
+  - name: trips_contract
+    description: "Driver's persisted table description"
+    columns:
+      - name: id
+        data_type: bigint
+        description: "Trip identifier"
+        constraints:
+          - type: not_null
+      - name: zone
+        data_type: varchar
+        description: "Driver's persisted zone description"

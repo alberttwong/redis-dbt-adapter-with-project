@@ -1,7 +1,12 @@
-name: Native dbt v2 smoke
+name: Native dbt v2 parity
 
 on:
   workflow_dispatch:
+    inputs:
+      taxi:
+        description: Run the full taxi project and demos (downloads the TLC CSV)
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -58,7 +63,20 @@ jobs:
         working-directory: engine
         run: |
           rustup show
-          cargo build -p dbt-sa-cli --no-default-features
+          cargo build -p dbt-sa-cli
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.13"
+
+      - name: Install optional native Python runtime (without the v1 adapter)
+        run: |
+          uv venv .venv-v2 --python 3.13
+          uv pip install --python .venv-v2/bin/python -r v2/requirements-python.txt
+          echo "$GITHUB_WORKSPACE/.venv-v2/bin" >> "$GITHUB_PATH"
+
+      - name: Test local Arrow runtime
+        run: .venv-v2/bin/python -m unittest discover -s engine/crates/dbt-adapter/tests/python -v
 
       - name: Download pinned Redis ADBC driver
         env:
@@ -70,3 +88,41 @@ jobs:
         env:
           REDIS_ADBC_DRIVER: ${{ github.workspace }}/v1/driver/libadbc_driver_redis.so
         run: python3 v2/smoke.py --dbt "$GITHUB_WORKSPACE/engine/target/debug/dbt" --build
+
+      - name: Run native feature parity
+        env:
+          REDIS_ADBC_DRIVER: ${{ github.workspace }}/v1/driver/libadbc_driver_redis.so
+        run: python3 v2/parity.py --dbt "$GITHUB_WORKSPACE/engine/target/debug/dbt"
+
+      - name: Validate trusted TLS and credential precedence
+        env:
+          REDIS_ADBC_DRIVER: ${{ github.workspace }}/v1/driver/libadbc_driver_redis.so
+          REDIS_USERNAME: default
+          REDIS_PASSWORD: parity-test-password
+          REDIS_URI: rediss://wrong:incorrect-uri-password@127.0.0.1:6381/0
+        run: |
+          mkdir -p "$RUNNER_TEMP/redis-tls"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
+            -addext subjectAltName=DNS:localhost,IP:127.0.0.1 \
+            -keyout "$RUNNER_TEMP/redis-tls/server.key" -out "$RUNNER_TEMP/redis-tls/server.crt"
+          chmod 644 "$RUNNER_TEMP/redis-tls/server.key"
+          docker run -d --name redis-v2-tls -p 127.0.0.1:6381:6379 \
+            -v "$RUNNER_TEMP/redis-tls:/certs:ro" redis:8.6.2 redis-server --port 0 --tls-port 6379 \
+            --tls-cert-file /certs/server.crt --tls-key-file /certs/server.key \
+            --tls-ca-cert-file /certs/server.crt --tls-auth-clients no --requirepass parity-test-password
+          for attempt in $(seq 1 30); do
+            if docker exec redis-v2-tls redis-cli --tls --cacert /certs/server.crt -a parity-test-password ping >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          export SSL_CERT_FILE="$RUNNER_TEMP/redis-tls/server.crt"
+          python3 v2/smoke.py --dbt "$GITHUB_WORKSPACE/engine/target/debug/dbt" --build
+
+      - name: Download taxi data
+        if: inputs.taxi
+        run: bash v1/scripts/download_data.sh
+
+      - name: Run full taxi project and demos
+        if: inputs.taxi
+        env:
+          REDIS_ADBC_DRIVER: ${{ github.workspace }}/v1/driver/libadbc_driver_redis.so
+        run: python3 v2/taxi.py --dbt "$GITHUB_WORKSPACE/engine/target/debug/dbt" --csv "$GITHUB_WORKSPACE/v1/data/yellow_tripdata_2019-01.csv.gz"
