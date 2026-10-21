@@ -1,6 +1,6 @@
 # Native Redis v2 feature validation
 
-The feature-parity changes are published in [engine PR #3](https://github.com/alberttwong/dbt/pull/3)
+The feature-parity changes are merged in [engine PR #3](https://github.com/alberttwong/dbt/pull/3)
 and pinned by `upstream.json`. The connection-option patch received human
 verification before commit. No stock dbt v2 binary includes Redis.
 
@@ -9,7 +9,15 @@ PyArrow 25.0.1, and ADBC driver manager 1.12.0. The taxi input is the existing
 January 2019 TLC CSV, sampled every 50 rows: 153,356 source rows. The project
 includes the mixed-case header fixes from companion PR #73.
 
-| Scenario | Local result |
+[Linux CI passed on October 21, 2026](https://github.com/alberttwong/redis-dbt-adapter-with-project/actions/runs/39623533131) using the exact pinned engine
+commit `90178580bd6f3353d758fff770fdc2c58c985ad0` and Redis ADBC v0.0.16.
+It passed the smoke, expanded parity fixture, verified TLS with explicit
+credentials overriding incorrect URI credentials, and the full taxi workflow.
+The taxi build had 82 successes and one configured warning; its empty build
+had 82 successes. Both runners completed schema cleanup. Engine PR #3 and
+integration PR #74 are merged. All seven checks on PR #74 also passed.
+
+| Scenario | Result |
 | --- | --- |
 | Original smoke, two builds and cleanup | Pass |
 | SQL table/view/ephemeral and delete+insert | Pass |
@@ -30,7 +38,7 @@ includes the mixed-case header fixes from companion PR #73.
 | Incorrect credentials rejected | Pass |
 | TLS with untrusted certificate | Rejected, as expected |
 | TLS transport with explicit test-only verification bypass | Pass |
-| Trusted TLS on Linux | Workflow added; run pending |
+| Trusted TLS on Linux | Pass, certificate verification enabled |
 
 The optional Python runtime needs only PyArrow and the ADBC driver manager;
 it does not install or import the v1 Python adapter. Additional pandas/polars
