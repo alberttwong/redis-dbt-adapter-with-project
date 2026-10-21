@@ -6,7 +6,7 @@ projects, and test resources.
 | Directory | Purpose | Status |
 | --- | --- | --- |
 | [`v1/`](v1/README.md) | Python `dbt-redis-adbc` adapter, NYC taxi example, driver tooling, and functional tests | Supports dbt Core 1.10 and later 1.x releases; the example requires 1.10.8+ |
-| [`v2/`](v2/README.md) | Native v2 integration fixture, smoke runner, and implementation plan | Experimental fork: native smoke builds pass; requires a custom engine |
+| [`v2/`](v2/README.md) | Native v2 fixtures, taxi validation, and tooling | Experimental fork: smoke and v1 feature scenarios pass locally; requires a custom engine |
 
 ## Run the v1 example
 

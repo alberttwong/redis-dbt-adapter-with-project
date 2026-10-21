@@ -1,0 +1,8 @@
+snapshots:
+  - name: trips_snapshot
+    relation: ref('trips')
+    config:
+      unique_key: id
+      strategy: check
+      check_cols: [zone]
+      hard_deletes: new_record

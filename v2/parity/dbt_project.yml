@@ -1,0 +1,11 @@
+name: redis_dbt_v2_smoke
+version: "0.1.0"
+config-version: 2
+require-dbt-version: [">=2.0.0", "<3.0.0"]
+profile: redis_dbt_v2_smoke
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+
+snapshot-paths: ["snapshots"]
