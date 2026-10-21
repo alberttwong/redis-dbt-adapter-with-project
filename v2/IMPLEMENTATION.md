@@ -29,7 +29,7 @@ Implemented connection mapping, derived from the v1 adapter:
 V1 options `aggregate_pushdown`, `rename_rekey`, timeouts, and scalar
 `driver_options` are validated. Reserved overrides are rejected; explicit
 credentials override URI credentials. Auth, invalid configuration, and local TLS
-checks pass. Trusted TLS on Linux remains pending.
+checks pass. Trusted TLS and credential precedence also pass in Linux CI.
 
 ## Port relation, metadata, and SQL behavior
 
@@ -52,7 +52,7 @@ checks pass. Trusted TLS on Linux remains pending.
   second incremental build and cleanup.
 - [x] Add a manual CI workflow that builds an engine at a pinned Redis
   implementation commit and runs the fixture with the pinned driver.
-- [ ] Verify the first native Linux CI run after merging the workflow.
+- [x] Verify native Linux CI, including trusted TLS and the full taxi project.
 - [x] Validate the full NYC taxi SQL project, packages and strict v2 parsing,
   source loading, contracts, persisted docs, snapshots, `merge`, `microbatch`,
   and empty builds, including the Python model and custom `adapter.load_csv_file`
@@ -61,15 +61,15 @@ checks pass. Trusted TLS on Linux remains pending.
   Port applicable functional scenarios; the Python `dbt-tests-adapter` suite
   cannot validate a compiled v2 adapter by itself.
 - [x] Document unsupported features and the migration commands; retain v1
-  support while v2 is developed. Linux validation and review/merge of the
-  feature-parity implementation remain required before broader support claims.
+  support while v2 is developed. The feature-parity engine and integration
+  changes are merged; the adapter remains experimental in the custom engine.
 
 ## Validated milestone
 
-Native macOS arm64 validation passed with dbt-oss 2.0.8, Redis 8.6.2, and Redis
+Native macOS arm64 and Linux CI validation passed with dbt-oss 2.0.8, Redis 8.6.2, and Redis
 ADBC v0.0.16. The original smoke, expanded parity fixture, and complete sampled
 NYC taxi project pass, including Python, CSV loading, contracts, persisted docs,
 merge, snapshots, microbatch, and empty builds with unit-test fixtures.
 See [VALIDATION.md](VALIDATION.md) for evidence and limitations. The pinned engine
-is published in [engine PR #3](https://github.com/alberttwong/dbt/pull/3).
-Linux parity and trusted TLS verification remain pending the manual workflow.
+is merged in [engine PR #3](https://github.com/alberttwong/dbt/pull/3).
+Linux parity and trusted TLS passed in the [manual workflow](https://github.com/alberttwong/redis-dbt-adapter-with-project/actions/runs/39623533131).

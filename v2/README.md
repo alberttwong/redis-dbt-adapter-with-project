@@ -1,7 +1,7 @@
 # Redis adapter integration for dbt v2
 
-**Experimental native Redis support is available in our engine fork.** A local
-macOS arm64 build of dbt-oss 2.0.8 passed this fixture against Redis 8.6.2 and
+**Experimental native Redis support is available in our engine fork.** macOS arm64
+and Linux builds of dbt-oss 2.0.8 passed this fixture against Redis 8.6.2 and
 Redis ADBC v0.0.16: parse, full-refresh build, a second incremental build, all
 five tests, and schema cleanup. The stock dbt v2 binary does not include Redis.
 The pinned feature-parity implementation also validates the taxi example and its Python
@@ -105,11 +105,11 @@ python3 -m unittest discover -s v2/tests -v
 
 CI runs those unit tests separately from the v1 functional suite. The manual
 native workflow builds the pinned engine and can run the smoke, feature-parity,
-TLS, and full taxi suites. Linux verification of the parity changes remains
-pending. Redis stays experimental and static analysis is disabled.
+TLS, and full taxi suites. [Linux verification passed on October 21, 2026](https://github.com/alberttwong/redis-dbt-adapter-with-project/actions/runs/39623533131).
+Redis stays experimental and static analysis is disabled.
 
 The feature-parity source is pinned on engine branch `codex/redis-feature-parity`
-and published in engine PR #3. The connection-option patch received human
+and merged in engine PR #3. The connection-option patch received human
 verification before commit.
 
 v2 reports ephemeral nodes as `skipped` in `run_results.json`, even when its CLI
@@ -158,5 +158,6 @@ memory-bound, matching v1's sampled-table behavior.
 TLS uses the driver's `rediss://` URI and system certificate trust. Local tests
 confirmed strict rejection of an untrusted certificate and encrypted transport
 with the explicit test URI parameter `skip_verify=true`. The Linux workflow
-adds the temporary certificate to Go's trust input and tests verification;
-that run is still pending. Use trusted certificates in normal deployments.
+adds the temporary certificate to Go's trust input; verification and credential
+precedence passed without a verification bypass. Use trusted certificates in
+normal deployments.
