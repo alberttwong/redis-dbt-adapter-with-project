@@ -25,6 +25,7 @@ REQUIRED_RESULTS = {
     f"model.{PROJECT}.trips_incremental",
     f"test.{PROJECT}.assert_totals",
 }
+EPHEMERAL_RESULT = f"model.{PROJECT}.trips_input"
 GENERIC_TEST_PREFIXES = {
     f"test.{PROJECT}.{test}_{model}_id."
     for test in ("not_null", "unique")
@@ -46,7 +47,13 @@ def check_results(path):
     try:
         results = json.loads(path.read_text())["results"]
         seen = {result["unique_id"] for result in results}
-        failed = [result["unique_id"] for result in results if result["status"] not in {"success", "pass"}]
+        # v2 writes its ephemeral no-op as "skipped". Every executable node
+        # still needs a successful result, including the ephemeral's consumers.
+        failed = [
+            result["unique_id"] for result in results
+            if result["status"] not in {"success", "pass"}
+            and not (result["unique_id"] == EPHEMERAL_RESULT and result["status"] == "skipped")
+        ]
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise SmokeError(f"Missing or invalid build results: {path}") from exc
     missing = REQUIRED_RESULTS - seen

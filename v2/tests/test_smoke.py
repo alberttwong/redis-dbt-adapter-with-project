@@ -48,6 +48,21 @@ class ResultTests(unittest.TestCase):
             path.write_text(json.dumps(successful_results()))
             smoke.check_results(path)
 
+    def test_only_ephemeral_model_can_be_a_no_op(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "run_results.json"
+            data = successful_results()
+            data["results"].append({"unique_id": smoke.EPHEMERAL_RESULT, "status": "skipped"})
+            path.write_text(json.dumps(data))
+            smoke.check_results(path)
+            for node in smoke.REQUIRED_RESULTS:
+                with self.subTest(node=node):
+                    invalid = successful_results()
+                    next(result for result in invalid["results"] if result["unique_id"] == node)["status"] = "skipped"
+                    path.write_text(json.dumps(invalid))
+                    with self.assertRaises(smoke.SmokeError):
+                        smoke.check_results(path)
+
     def test_cannot_silently_omit_generic_tests(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "run_results.json"
