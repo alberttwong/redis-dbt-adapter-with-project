@@ -24,14 +24,8 @@ DRIVER = Path(__file__).resolve().parents[3] / "driver" / "libadbc_driver_redis"
 # Tests that fail on a driver issue. They're strict xfails: once a driver
 # release fixes the issue they pass, and the run fails until they're removed
 # here.
-UNION_TYPES = "UNION's column types (driver #187: https://github.com/alberttwong/redis-adbc-driver/issues/187)"
 DATE_FUNCTION = "no date(x) (driver #188: https://github.com/alberttwong/redis-adbc-driver/issues/188)"
-REPEATED_DISTINCT = "select distinct x, x (driver #232: https://github.com/alberttwong/redis-adbc-driver/issues/232)"
 DRIVER_ISSUES = {
-    # unique_key=['state', 'state']: delete+insert runs select distinct state, state.
-    "test_incremental.py::TestIncrementalUniqueKey::test__duplicated_unary_unique_key_list": REPEATED_DISTINCT,
-    # A DATE updated_at with invalidate_hard_deletes.
-    "test_snapshot.py::TestSimpleSnapshot": UNION_TYPES,
     # dbt_valid_to_current: "date('2099-12-31')".
     "test_snapshot.py::TestSnapshotDbtValidToCurrent": DATE_FUNCTION,
     "test_snapshot.py::TestSnapshotNewRecordDbtValidToCurrent": DATE_FUNCTION,

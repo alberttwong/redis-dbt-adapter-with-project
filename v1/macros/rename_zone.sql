@@ -7,7 +7,7 @@
 
 {% macro rename_zone(location_id, name) %}
   {% call statement('rename_zone') -%}
-    update {{ ref('taxi_zone_lookup') }} set Zone = '{{ name | replace("'", "''") }}' where LocationID = {{ location_id }}
+    update {{ ref('taxi_zone_lookup') }} set "Zone" = '{{ name | replace("'", "''") }}' where "LocationID" = {{ location_id }}
   {%- endcall %}
   {{ log("Zone " ~ location_id ~ " is now " ~ name, info=True) }}
 {% endmacro %}

@@ -17,23 +17,6 @@ from dbt.tests.adapter.constraints.test_constraints import (
 )
 
 
-# The suite's contracts declare `integer` for columns like `select 1 as id`:
-# an integer literal is INTEGER on Postgres and BIGINT on the driver. So here
-# they're bigint, and so are the casts the models compare with them.
-BIGINT = {"data_type: integer": "data_type: bigint", "dbt.type_int()": "dbt.type_bigint()"}
-
-
-@pytest.fixture(scope="module", autouse=True)
-def bigint_contracts():
-    with pytest.MonkeyPatch.context() as mp:
-        for name, value in vars(fixtures).items():
-            if isinstance(value, str):
-                for old, new in BIGINT.items():
-                    value = value.replace(old, new)
-                mp.setattr(fixtures, name, value)
-        yield
-
-
 class RedisColumnTypes:
     @pytest.fixture
     def string_type(self):
@@ -41,7 +24,7 @@ class RedisColumnTypes:
 
     @pytest.fixture
     def int_type(self):
-        return "BIGINT"
+        return "INTEGER"
 
     @pytest.fixture
     def data_types(self, schema_int_type, int_type, string_type):
@@ -57,10 +40,10 @@ class RedisColumnTypes:
         ]
 
 
-# The suite's expected DDL, with bigint ids (see BIGINT).
+# The suite's expected DDL, using the driver's INTEGER literals.
 COLUMN_CONSTRAINTS_SQL = """
 create table <model_identifier> (
-    id bigint not null primary key check ((id > 0)) check (id >= 1) references <foreign_key_model_identifier> (id) unique,
+    id integer not null primary key check ((id > 0)) check (id >= 1) references <foreign_key_model_identifier> (id) unique,
     color text,
     date_day text
 ) ;
@@ -87,7 +70,7 @@ insert into <model_identifier> (
 
 MODEL_CONSTRAINTS_SQL = """
 create table <model_identifier> (
-    id bigint not null,
+    id integer not null,
     color text,
     date_day text,
     check ((id > 0)),
@@ -119,7 +102,7 @@ insert into <model_identifier> (
 
 QUOTED_COLUMN_SQL = """
 create table <model_identifier> (
-    id bigint not null,
+    id integer not null,
     "from" text not null,
     date_day text,
     check (("from" = 'blue'))
