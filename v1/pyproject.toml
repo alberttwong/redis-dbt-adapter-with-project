@@ -12,14 +12,16 @@ dependencies = [
 [dependency-groups]
 dev = [
     "dbt-tests-adapter>=1.20,<2",
-    "pandas>=2",
-    "polars>=1",
-    "pytest>=8",
-    "pytest-xdist>=3",
+    "pandas>=2,<4",
+    "polars>=1,<2",
+    "pytest>=8,<10",
+    "pytest-xdist>=3,<4",
 ]
 
 [tool.uv]
 package = false
+# Security floor for the requests certificate bundle (GHSA-6q48-6c7w-9gw2).
+constraint-dependencies = ["certifi>=2026.10.19"]
 
 [tool.uv.sources]
 dbt-redis-adbc = { path = "adapter", editable = true }

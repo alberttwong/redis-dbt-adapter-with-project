@@ -158,6 +158,12 @@ Nightly, all of it runs against the driver's latest release, so a driver change
 that breaks the project shows up before the pin is bumped. To test another
 release or a driver commit, run the workflow by hand with `driver_version`.
 
+CI also audits the locked Python runtime and test dependencies and the optional
+v2 Python runtime with `pip-audit`. Dependency refreshes stay within the major
+versions already in the lockfile; pandas retains its Python 3.10-compatible 2.x
+resolution alongside 3.x for newer Python versions. The project constrains
+certifi to 2026.10.19 or newer to address GHSA-6q48-6c7w-9gw2.
+
 The driver's repo is private, so CI reads it with the `DRIVER_REPO_TOKEN`
 secret: a fine-grained token with read-only Contents access to
 alberttwong/redis-adbc-driver alone. It downloads the release and, when CI
