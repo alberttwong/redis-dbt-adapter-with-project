@@ -24,6 +24,26 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  dependency-audit:
+    name: Python dependency security audit (${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Export locked runtime and test dependencies
+        working-directory: v1
+        run: uv export --locked --all-groups --no-emit-project --no-emit-package dbt-redis-adbc --no-hashes --output-file "$RUNNER_TEMP/v1-requirements.txt"
+      - name: Audit both Python runtimes
+        run: |
+          uvx --python ${{ matrix.python }} pip-audit==2.10.1 --no-deps --disable-pip -r "$RUNNER_TEMP/v1-requirements.txt"
+          uvx --python ${{ matrix.python }} pip-audit==2.10.1 --no-deps --disable-pip -r v2/requirements-python.txt
+
   # Fast runner tests; the pinned native engine has a separate manual workflow.
   v2-harness:
     name: v2 smoke runner tests
