@@ -6,7 +6,7 @@ Compatible with dbt Core 1.10 and later 1.x releases.
 
 ## Install
 
-Requires Python 3.10 or later and Redis 8.x with the Query Engine (Search)
+Requires Python 3.13 or later (PyArrow 26+) and Redis 8.x with the Query Engine (Search)
 enabled. The adapter is tested against Redis 8.6.2.
 
 ```shell
