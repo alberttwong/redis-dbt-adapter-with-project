@@ -9,6 +9,15 @@ PyArrow 25.0.1, and ADBC driver manager 1.12.0. The taxi input is the existing
 January 2019 TLC CSV, sampled every 50 rows: 153,356 source rows. The project
 includes the mixed-case header fixes from companion PR #73.
 
+On October 22, 2026, the pinned engine and driver were revalidated locally on
+macOS arm64 with Python 3.13.16, PyArrow 26.0.0, and ADBC driver manager 1.12.0.
+All four engine Python runtime tests, the expanded feature-parity runner, and
+the full native taxi runner passed, including Python models, CSV loading,
+incremental/snapshot/microbatch demos, empty builds, and schema cleanup. This
+runtime used an isolated environment without the v1 Python adapter. The shared
+Python runtime now requires Python 3.11+ because PyArrow 26 drops Python 3.10.
+The Linux and TLS results below refer to the earlier PyArrow 25 run.
+
 [Linux CI passed on October 21, 2026](https://github.com/alberttwong/redis-dbt-adapter-with-project/actions/runs/39623533131) using the exact pinned engine
 commit `90178580bd6f3353d758fff770fdc2c58c985ad0` and Redis ADBC v0.0.16.
 It passed the smoke, expanded parity fixture, verified TLS with explicit

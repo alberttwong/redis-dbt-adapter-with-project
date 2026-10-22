@@ -15,7 +15,7 @@ model, snapshots, contracts, merge, microbatch, persisted docs, and CSV loader.
 See [VALIDATION.md](VALIDATION.md) for the exact scope and review status.
 
 The Python v1 adapter, its dependencies, driver tooling, and NYC taxi example
-live in [`../v1/`](../v1/README.md). The v2 runner uses Python 3.10+ and the
+live in [`../v1/`](../v1/README.md). The v2 runner uses Python 3.11+ and the
 standard library only; it does not install or import the v1 adapter.
 
 ## Engine implementation
@@ -129,7 +129,8 @@ See the [implementation checklist](IMPLEMENTATION.md) for remaining work.
 ## Feature-parity checks
 
 Python models and the custom CSV loader use a local Python subprocess with
-PyArrow and the ADBC driver manager. They do not import the Python dbt adapter.
+PyArrow 26 and the ADBC driver manager on Python 3.11+. They do not import the
+Python dbt adapter.
 The executable uses `python3` from `PATH`; install model-specific packages in
 that environment yourself. `dbt.ref()` and `dbt.source()` return Arrow tables,
 `session.sql()` returns an Arrow table, and model results can be Arrow tables,
