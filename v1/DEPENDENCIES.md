@@ -2,16 +2,18 @@
 
 The October 22, 2026 refresh for [issue #78](https://github.com/alberttwong/redis-dbt-adapter-with-project/issues/78)
 uses PyArrow 26.0.0 in both Python runtimes and Polars 2.0.0 in the adapter test
-suite. Python 3.11 is now the minimum supported version; the example retains its
-existing upper bound of Python 3.13. Recreate environments with a supported
-interpreter before running `uv sync --locked`.
+suite. Python 3.13 is now the minimum supported version. The example uses
+Python 3.13 (`>=3.13,<3.14`); the adapter package requires Python 3.13 or later.
+Support for Python 3.11 and 3.12 has been dropped to standardize the runtime and
+remove older-Python dependency resolutions. Recreate environments with Python
+3.13 before running `uv sync --locked`.
 
 ## Compatibility changes
 
 [PyArrow 26](https://arrow.apache.org/blog/2026/10/08/26.0.0-release/) drops
 Python 3.10 and requires NumPy 2.x and pandas 2.2.2+ for their optional
-integrations. The example's development dependencies set the pandas floor
-accordingly. The Arrow-only native v2 runtime still needs only PyArrow and the
+integrations. The example's development dependencies now require pandas 3 and pytest 9,
+matching their current major versions. The Arrow-only native v2 runtime still needs only PyArrow and the
 ADBC driver manager. The oldest-dependency CI lane now uses PyArrow 26.0.0,
 while retaining the existing dbt Core, dbt adapter, and ADBC manager floors.
 
@@ -29,6 +31,10 @@ These versions were rechecked against PyPI release metadata on October 22,
 2026. The lockfile selects the newest releases allowed by the current dbt
 packages and supported Python versions. Do not override upstream requirements
 to force these upgrades; recheck when dbt publishes compatible releases.
+Explicit resolver checks of the latest DeepDiff, more-itertools, protobuf, and
+python-dateutil majors against dbt-core 1.12.6 and dbt-adapters 1.24.5 each
+returned an unsatisfiable dependency conflict. All direct dependencies resolve
+to their latest stable releases on Python 3.13.
 
 | Library | Locked version | Latest stable | Reason retained |
 | --- | --- | --- | --- |
@@ -39,15 +45,14 @@ to force these upgrades; recheck when dbt publishes compatible releases.
 | pathspec | 1.0.4 | 1.1.1 | dbt-core 1.12.6 and dbt-common 1.39.0 require `<1.1` |
 | protobuf | 6.33.6 | 7.36.2 | dbt-adapters 1.24.5 and dbt-common 1.39.0 require `<7.0` |
 | python-dateutil | 2.9.0.post0 | 3.0.0 | dbt-common requires `<3.0`; metricflow requires `<2.10` |
-| NetworkX | 3.6.1 on Python 3.11; 3.7 on Python 3.12+ | 3.7 | 3.7 requires Python 3.12+ |
-| NumPy | 2.4.6 on Python 3.11; 2.5.4 on Python 3.12+ | 2.5.4 | 2.5.4 requires Python 3.12+ |
 
 Sources: [dbt-common metadata](https://pypi.org/pypi/dbt-common/1.39.0/json),
 [dbt-core metadata](https://pypi.org/pypi/dbt-core/1.12.6/json),
 [dbt-adapters metadata](https://pypi.org/pypi/dbt-adapters/1.24.5/json),
-[MetricFlow metadata](https://pypi.org/pypi/metricflow/0.213.0/json),
-[NetworkX metadata](https://pypi.org/pypi/networkx/3.7/json), and
-[NumPy metadata](https://pypi.org/pypi/numpy/2.5.4/json).
+and [MetricFlow metadata](https://pypi.org/pypi/metricflow/0.213.0/json).
+
+NetworkX 3.7 and NumPy 2.5.4 now resolve uniformly to their latest stable
+versions; older-Python fallback versions are no longer needed.
 
 ADBC driver manager 1.12.0, hatchling 1.32.4, and dbt_utils 1.4.1 were already
 current. CI audits the locked runtime and development dependencies and the

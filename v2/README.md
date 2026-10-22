@@ -15,7 +15,7 @@ model, snapshots, contracts, merge, microbatch, persisted docs, and CSV loader.
 See [VALIDATION.md](VALIDATION.md) for the exact scope and review status.
 
 The Python v1 adapter, its dependencies, driver tooling, and NYC taxi example
-live in [`../v1/`](../v1/README.md). The v2 runner uses Python 3.11+ and the
+live in [`../v1/`](../v1/README.md). The v2 runner uses Python 3.13+ and the
 standard library only; it does not install or import the v1 adapter.
 
 ## Engine implementation
@@ -129,7 +129,7 @@ See the [implementation checklist](IMPLEMENTATION.md) for remaining work.
 ## Feature-parity checks
 
 Python models and the custom CSV loader use a local Python subprocess with
-PyArrow 26 and the ADBC driver manager on Python 3.11+. They do not import the
+PyArrow 26 and the ADBC driver manager on Python 3.13+. They do not import the
 Python dbt adapter.
 The executable uses `python3` from `PATH`; install model-specific packages in
 that environment yourself. `dbt.ref()` and `dbt.source()` return Arrow tables,
@@ -138,7 +138,7 @@ record batches/readers, pandas DataFrames, or polars DataFrames. As in v1,
 Python models are tables only. Python execution is not supported in replay mode.
 
 ```sh
-python3 -m venv .venv-v2
+python3.13 -m venv .venv-v2
 .venv-v2/bin/python -m pip install -r v2/requirements-python.txt
 export PATH="$PWD/.venv-v2/bin:$PATH"
 export REDIS_ADBC_DRIVER=/absolute/path/to/libadbc_driver_redis.dylib

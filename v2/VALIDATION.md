@@ -15,7 +15,8 @@ All four engine Python runtime tests, the expanded feature-parity runner, and
 the full native taxi runner passed, including Python models, CSV loading,
 incremental/snapshot/microbatch demos, empty builds, and schema cleanup. This
 runtime used an isolated environment without the v1 Python adapter. The shared
-Python runtime now requires Python 3.11+ because PyArrow 26 drops Python 3.10.
+Python runtime now requires Python 3.13+; support for Python 3.11 and 3.12 has
+been dropped to standardize on the validated Python 3.13 runtime.
 The Linux and TLS results below refer to the earlier PyArrow 25 run.
 
 [Linux CI passed on October 21, 2026](https://github.com/alberttwong/redis-dbt-adapter-with-project/actions/runs/39623533131) using the exact pinned engine

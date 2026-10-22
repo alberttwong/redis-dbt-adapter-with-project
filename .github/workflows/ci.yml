@@ -30,7 +30,7 @@ jobs:
     timeout-minutes: 5
     strategy:
       matrix:
-        python: ["3.11", "3.13"]
+        python: ["3.13"]
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
@@ -71,7 +71,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.11", "3.13"]
+        python: ["3.13"]
         # locked: uv.lock. oldest: the lowest versions the pyproject.toml
         # files allow (the project's dbt-core, the adapter's other floors).
         versions: [locked, oldest]
@@ -184,7 +184,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.11", "3.13"]
+        python: ["3.13"]
     services:
       redis:
         image: redis:8.6.2
