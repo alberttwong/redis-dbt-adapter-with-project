@@ -60,7 +60,7 @@ make setup
 
 - runs `uv sync` and `dbt deps` (dbt_utils, and the local `redis_adbc_utils`)
 - puts the driver in `driver/`: the prebuilt library from the pinned
-  release (`v0.0.16`, in `scripts/driver-version`), after checking its SHA-256.
+  release (`v0.0.18`, in `scripts/driver-version`), after checking its SHA-256.
   Where the release has no build (another platform, or `DRIVER_VERSION` set
   to a commit) it builds the driver from source instead; `make driver-build`
   always does
@@ -208,8 +208,8 @@ Skipped, with the reason in the test:
 - backslash escapes (standard SQL strings, as dbt-postgres skips)
 - `get_catalog_for_single_relation`, which dbt-core never calls
 
-Tests that fail on an open driver issue are strict xfails, listed in
-`conftest.py`, so CI fails once a driver release fixes them.
+The pinned driver supports all snapshot tests, including `dbt_valid_to_current`
+with `date(x)`; these run as ordinary tests so regressions fail CI.
 
 ## Repository reference
 
@@ -326,7 +326,7 @@ ignored with a warning.
 
 Building this project turned up these issues, all filed on
 [alberttwong/redis-adbc-driver](https://github.com/alberttwong/redis-adbc-driver/issues).
-All of them are fixed in the pinned driver, v0.0.16, except #188 below.
+All of them are fixed in the pinned driver, v0.0.18.
 
 | Issue | Fixed in |
 |-|-|
@@ -378,8 +378,8 @@ dbt's adapter test suite also found these issues:
 - [#187](https://github.com/alberttwong/redis-adbc-driver/issues/187): fixed
   by v0.0.16. `UNION` now resolves `DATE` and `TIMESTAMP` together, allowing
   timestamp-strategy snapshots with a `DATE` `updated_at` and hard deletes.
-- [#188](https://github.com/alberttwong/redis-adbc-driver/issues/188): no
-  `date(x)`. Use `cast(x as date)`.
+- [#188](https://github.com/alberttwong/redis-adbc-driver/issues/188): fixed
+  by v0.0.18. `date(x)` now works, including `dbt_valid_to_current` expressions.
 - [#232](https://github.com/alberttwong/redis-adbc-driver/issues/232): fixed
   by v0.0.16. Repeated columns in `DISTINCT` now work, including delete+insert
   with a repeated `unique_key` such as `['state', 'state']`.

@@ -16,7 +16,7 @@ python -m pip install dbt-redis-adbc
 The Python package does not include the native Redis ADBC driver. Download and
 extract the shared library for your platform from the
 [driver releases](https://github.com/alberttwong/redis-adbc-driver/releases).
-The example project uses driver v0.0.16. Prebuilt libraries are available for
+The example project uses driver v0.0.18. Prebuilt libraries are available for
 macOS Apple Silicon, Linux x86-64, and Linux arm64.
 
 Set `REDIS_ADBC_DRIVER` to the library's absolute path. See the driver's
