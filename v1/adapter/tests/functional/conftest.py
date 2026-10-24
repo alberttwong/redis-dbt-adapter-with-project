@@ -21,24 +21,6 @@ pytest_plugins = ["dbt.tests.fixtures.project"]
 # directory, so the path must be absolute.
 DRIVER = Path(__file__).resolve().parents[3] / "driver" / "libadbc_driver_redis"
 
-# Tests that fail on a driver issue. They're strict xfails: once a driver
-# release fixes the issue they pass, and the run fails until they're removed
-# here.
-DATE_FUNCTION = "no date(x) (driver #188: https://github.com/alberttwong/redis-adbc-driver/issues/188)"
-DRIVER_ISSUES = {
-    # dbt_valid_to_current: "date('2099-12-31')".
-    "test_snapshot.py::TestSnapshotDbtValidToCurrent": DATE_FUNCTION,
-    "test_snapshot.py::TestSnapshotNewRecordDbtValidToCurrent": DATE_FUNCTION,
-}
-
-
-def pytest_collection_modifyitems(items):
-    for item in items:
-        for test, reason in DRIVER_ISSUES.items():
-            if f"/{test}::" in f"/{item.nodeid}::":
-                item.add_marker(pytest.mark.xfail(reason=reason, strict=True))
-
-
 @pytest.fixture(scope="class")
 def dbt_profile_target():
     return {
